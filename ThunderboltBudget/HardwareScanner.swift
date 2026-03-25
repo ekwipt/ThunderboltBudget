@@ -312,7 +312,7 @@ struct HardwareScanner {
                     bwLabel = String(format: "%.1f Gbps", bw)
                 }
             } else if let speed = node.receptacle_upstream_ambiguous_tag?.current_speed_key ?? node.receptacle_1_tag?.current_speed_key {
-                bwLabel = speed.contains("Up to") ? nil : speed
+                bwLabel = speed.replacingOccurrences(of: "Up to ", with: "")
             }
             
             result.append(DeviceNode(name: name, iconName: iconName, bandwidthLabel: bwLabel, uid: uid, children: children))
