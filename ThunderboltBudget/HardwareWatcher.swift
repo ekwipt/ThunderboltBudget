@@ -23,26 +23,52 @@ class HardwareWatcher {
     private var notifyPort: IONotificationPortRef?
     private var debounceTimer: Timer?
     
-    private var usbAddedIter: io_iterator_t = 0
-    private var usbRemovedIter: io_iterator_t = 0
-    
     func startMonitoring() {
         if notifyPort != nil { return } // Reject duplicate starts
         
+        // kIOMainPortDefault is available on all Apple Silicon targets
         notifyPort = IONotificationPortCreate(kIOMainPortDefault)
         guard let port = notifyPort else { return }
         
         IONotificationPortSetDispatchQueue(port, DispatchQueue.main)
         
+        // Register for display reconfiguration (works across all macOS versions)
         CGDisplayRegisterReconfigurationCallback(displayCallback, nil)
         
-        let match1 = IOServiceMatching("IOUSBDevice") as CFDictionary
-        IOServiceAddMatchingNotification(port, kIOPublishNotification, match1, usbCallback, nil, &usbAddedIter)
-        while IOIteratorNext(usbAddedIter) != 0 {} 
+        // macOS Sequoia (15+) renamed IOUSBDevice -> IOUSBHostDevice.
+        // We register BOTH class names so the app works on Ventura, Sonoma, AND Sequoia.
+        let usbClasses = ["IOUSBHostDevice", "IOUSBDevice"]
+        for className in usbClasses {
+            if let match = IOServiceMatching(className) {
+                var addedIter: io_iterator_t = 0
+                var removedIter: io_iterator_t = 0
+                
+                IOServiceAddMatchingNotification(port, kIOPublishNotification,
+                    match as CFDictionary, usbCallback, nil, &addedIter)
+                while IOIteratorNext(addedIter) != 0 {}
+                
+                if let match2 = IOServiceMatching(className) {
+                    IOServiceAddMatchingNotification(port, kIOTerminatedNotification,
+                        match2 as CFDictionary, usbCallback, nil, &removedIter)
+                    while IOIteratorNext(removedIter) != 0 {}
+                }
+            }
+        }
         
-        let match2 = IOServiceMatching("IOUSBDevice") as CFDictionary
-        IOServiceAddMatchingNotification(port, kIOTerminatedNotification, match2, usbCallback, nil, &usbRemovedIter)
-        while IOIteratorNext(usbRemovedIter) != 0 {} 
+        // Also monitor Thunderbolt device attach/detach directly (missed entirely before)
+        if let tbMatch = IOServiceMatching("IOThunderboltDevice") {
+            var tbAddedIter: io_iterator_t = 0
+            var tbRemovedIter: io_iterator_t = 0
+            IOServiceAddMatchingNotification(port, kIOPublishNotification,
+                tbMatch as CFDictionary, usbCallback, nil, &tbAddedIter)
+            while IOIteratorNext(tbAddedIter) != 0 {}
+            
+            if let tbMatch2 = IOServiceMatching("IOThunderboltDevice") {
+                IOServiceAddMatchingNotification(port, kIOTerminatedNotification,
+                    tbMatch2 as CFDictionary, usbCallback, nil, &tbRemovedIter)
+                while IOIteratorNext(tbRemovedIter) != 0 {}
+            }
+        }
     }
     
     func triggerUpdate() {
