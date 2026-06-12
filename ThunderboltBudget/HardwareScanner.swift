@@ -33,16 +33,18 @@ struct HardwareScanner {
         guard let root = try? JSONDecoder().decode(SPProfileRoot.self, from: data) else {
             return []
         }
-        
-        // 1. Map physical DisplayPort streams using our custom IOKit scanner
+
+        // 1. Map physical DisplayPort streams and display details using our custom IOKit scanner
         let displayMappings = IORegTopologyParser.getDisplayMappings()
-        
+        let dscDisplayNames = IORegTopologyParser.getDSCActiveDisplayNames()
+        let displayDetailsMap = IORegTopologyParser.getDisplayDetails()
+
         // 2. Extract displays
         var allDisplays: [DeviceNode] = []
         if let dispNodes = root.SPDisplaysDataType {
             for gpu in dispNodes {
                 if let ndrvs = gpu.spdisplays_ndrvs {
-                    allDisplays.append(contentsOf: mapNodes(ndrvs, defaultIcon: "display") ?? [])
+                    allDisplays.append(contentsOf: mapNodes(ndrvs, defaultIcon: "display", dscDisplayNames: dscDisplayNames, displayDetailsMap: displayDetailsMap) ?? [])
                 }
             }
         }
@@ -65,14 +67,15 @@ struct HardwareScanner {
             var customizedRootPorts: [DeviceNode] = []
             for port in injected {
                 var maxCap = 40.0
-                if let oldLabel = port.bandwidthLabel, oldLabel.contains("Gb/s") {
-                    maxCap = Double(oldLabel.replacingOccurrences(of: " Gb/s", with: "")) ?? 40.0
+                if let oldLabel = port.bandwidthLabel {
+                    let clean = oldLabel.replacingOccurrences(of: " Gb/s", with: "").replacingOccurrences(of: " Gbps", with: "")
+                    maxCap = Double(clean) ?? 40.0
                 }
                 
                 // Sum all endpoints under this physical port
                 let totalGbps = sumBandwidth(of: [port])
                 let ratio = min(totalGbps / maxCap, 1.0)
-                let newLabel = String(format: "%.1f / %.0f Gb/s", totalGbps, maxCap)
+                let newLabel = String(format: "%.1f / %.0f Gbps", totalGbps, maxCap)
                 
                 let newNode = DeviceNode(id: port.id, name: port.name, iconName: port.iconName, bandwidthLabel: newLabel, uid: port.uid, children: port.children, bandwidthRatio: ratio)
                 customizedRootPorts.append(newNode)
@@ -87,7 +90,7 @@ struct HardwareScanner {
         
         // 4. Any leftover displays go into the root Displays folder
         if !allDisplays.isEmpty {
-            finalNodes.append(DeviceNode(name: "Displays", iconName: "display.circle.fill", children: allDisplays))
+            finalNodes.append(DeviceNode(name: "Displays", iconName: "rectangle.stack.fill", children: allDisplays))
         }
         
         return pruneEmptyHubs(from: finalNodes)
@@ -140,7 +143,7 @@ struct HardwareScanner {
                     if let idx = availableDisplays.firstIndex(where: { $0.name.localizedCaseInsensitiveContains(accessory.name) }) {
                         let extracted = availableDisplays.remove(at: idx)
                         let newLabel = extracted.bandwidthLabel ?? accessory.speed
-                        matchedAccessories.append(DeviceNode(id: extracted.id, name: extracted.name, iconName: extracted.iconName, bandwidthLabel: newLabel, uid: extracted.uid, children: extracted.children))
+                        matchedAccessories.append(DeviceNode(id: extracted.id, name: extracted.name, iconName: extracted.iconName, bandwidthLabel: newLabel, uid: extracted.uid, children: extracted.children, dscActive: extracted.dscActive, displayDetails: extracted.displayDetails, rawBandwidth: extracted.rawBandwidth))
                     }
                 }
                 
@@ -158,7 +161,7 @@ struct HardwareScanner {
                         if lower.contains("thunderbolt") { continue }
                         if lower == "usb2.0 hub" || lower == "usb2.1 hub" || lower == "usb3.0 hub" || lower == "usb3.1 hub" || lower == "hub feature controller" { continue }
                         
-                        let syntheticIcon = accessory.name.localizedCaseInsensitiveContains("hub") ? "point.3.connected.trianglepath.dotted" : "usbplugin"
+                        let syntheticIcon = accessory.name.localizedCaseInsensitiveContains("hub") ? "point.3.connected.trianglepath.dotted" : "cable.connector"
                         matchedAccessories.append(DeviceNode(name: accessory.name, iconName: syntheticIcon, bandwidthLabel: accessory.speed))
                     }
                 }
@@ -170,7 +173,7 @@ struct HardwareScanner {
                     var displays: [DeviceNode] = []
                     var usbs: [DeviceNode] = []
                     for acc in matchedAccessories {
-                        if acc.iconName == "display" || acc.iconName == "display.circle.fill" || acc.iconName == "laptopcomputer" {
+                        if acc.iconName == "display" || acc.iconName == "rectangle.stack.fill" || acc.iconName == "laptopcomputer" {
                             displays.append(acc)
                         } else {
                             usbs.append(acc)
@@ -202,12 +205,12 @@ struct HardwareScanner {
                 total += sumBandwidth(of: children)
             } else {
                 if let label = node.bandwidthLabel {
-                    if label.contains("Gbps") {
-                        let val = Double(label.replacingOccurrences(of: " Gbps", with: "")) ?? 0.0
-                        total += val
-                    } else if label.contains("Mbps") {
-                        let val = Double(label.replacingOccurrences(of: " Mbps", with: "")) ?? 0.0
-                        total += val / 1000.0
+                    if label.contains("Gbps") || label.contains("Gb/s") {
+                        let valStr = label.replacingOccurrences(of: " Gbps", with: "").replacingOccurrences(of: " Gb/s", with: "")
+                        total += Double(valStr) ?? 0.0
+                    } else if label.contains("Mbps") || label.contains("Mb/s") {
+                        let valStr = label.replacingOccurrences(of: " Mbps", with: "").replacingOccurrences(of: " Mb/s", with: "")
+                        total += (Double(valStr) ?? 0.0) / 1000.0
                     }
                 }
             }
@@ -240,7 +243,7 @@ struct HardwareScanner {
             
             if let acc = matchedAccessory {
                 let newLabel = mutableNode.bandwidthLabel ?? acc.speed
-                let finalNode = DeviceNode(id: mutableNode.id, name: mutableNode.name, iconName: mutableNode.iconName, bandwidthLabel: newLabel, uid: mutableNode.uid, children: mutableNode.children)
+                let finalNode = DeviceNode(id: mutableNode.id, name: mutableNode.name, iconName: mutableNode.iconName, bandwidthLabel: newLabel, uid: mutableNode.uid, children: mutableNode.children, dscActive: mutableNode.dscActive, displayDetails: mutableNode.displayDetails, rawBandwidth: mutableNode.rawBandwidth)
                 extracted.append(finalNode)
             } else {
                 if let children = mutableNode.children {
@@ -261,7 +264,7 @@ struct HardwareScanner {
         return nil
     }
 
-    private func mapNodes(_ nodes: [SPNode], defaultIcon: String) -> [DeviceNode]? {
+    private func mapNodes(_ nodes: [SPNode], defaultIcon: String, dscDisplayNames: Set<String> = [], displayDetailsMap: [String: DisplayDetails] = [:]) -> [DeviceNode]? {
         guard !nodes.isEmpty else { return nil }
         
         var result: [DeviceNode] = []
@@ -300,37 +303,187 @@ struct HardwareScanner {
             }
             
             if let items = node._items {
-                children = mapNodes(items, defaultIcon: defaultIcon)
+                children = mapNodes(items, defaultIcon: defaultIcon, dscDisplayNames: dscDisplayNames, displayDetailsMap: displayDetailsMap)
             }
             
             var bwLabel: String? = nil
+            var isDSC = false
+            var rawBw: Double? = nil
+            var displayDetails: DisplayDetails? = nil
+
             if let res = node._spdisplays_resolution {
                 let cleanRes = res.replacingOccurrences(of: ".00Hz", with: "Hz")
-                name = "\(name) (\(cleanRes))"
-                
-                if let bw = self.calculateDisplayBandwidth(res) {
-                    bwLabel = String(format: "%.1f Gbps", bw)
+
+                // Check by name BEFORE appending the resolution string
+                isDSC = dscDisplayNames.contains { dscName in
+                    name.localizedCaseInsensitiveContains(dscName) || dscName.localizedCaseInsensitiveContains(name)
                 }
+
+                name = "\(name) (\(cleanRes))"
+
+                if let bw = self.calculateDisplayBandwidth(res, dscActive: isDSC) {
+                    bwLabel = String(format: "%.1f Gbps", bw)
+                    if isDSC {
+                        rawBw = bw * 3.0  // Store uncompressed value
+                    }
+                }
+
+                // Build DisplayDetails from actual system_profiler fields (decoded via CodingKeys)
+                let nativePixels   = node.displayPixels
+                let vendorName     = vendorNameFromID(node.displayVendorId)
+                let productModel   = node.displayProductId.map { "0x\($0.uppercased())" }
+                let serialDecoded  = decodeSerial(node.displaySerialHex)
+                let mfgDate        = buildMfgDate(week: node.displayWeek, year: node.displayYear)
+                let displayIdStr   = node.displayIDNumber.map { "Display \($0)" }
+                let resLabel       = parseResolutionLabel(node.spdisplays_pixelresolution)
+                let connType       = parseConnectionType(node.spdisplays_connection_type)
+                let isMain         = node.spdisplays_main == "spdisplays_yes"
+
+                // Best-effort IORegistry augmentation (DSC version, etc.)
+                var ioDetails: DisplayDetails? = nil
+                let baseName = node._name ?? ""
+                for (detailName, details) in displayDetailsMap {
+                    if baseName.localizedCaseInsensitiveContains(detailName) || detailName.localizedCaseInsensitiveContains(baseName) {
+                        ioDetails = details
+                        break
+                    }
+                }
+
+                displayDetails = DisplayDetails(
+                    displayUID: displayIdStr ?? ioDetails?.displayUID,
+                    vendor: vendorName ?? ioDetails?.vendor,
+                    model: productModel ?? ioDetails?.model,
+                    connectionType: connType ?? ioDetails?.connectionType,
+                    bitDepth: ioDetails?.bitDepth,
+                    nativeResolution: nativePixels ?? ioDetails?.nativeResolution,
+                    isScaled: isMain ? false : nil,
+                    edidSerial: serialDecoded ?? ioDetails?.edidSerial,
+                    edidMfgDate: mfgDate ?? ioDetails?.edidMfgDate,
+                    dscVersion: ioDetails?.dscVersion,
+                    dscMode: ioDetails?.dscMode,
+                    dscRatio: isDSC ? "3:1" : nil,
+                    maxResolution: resLabel ?? ioDetails?.maxResolution,
+                    hdrSupport: ioDetails?.hdrSupport,
+                    panelType: ioDetails?.panelType
+                )
             } else if let speed = node.receptacle_upstream_ambiguous_tag?.current_speed_key ?? node.receptacle_1_tag?.current_speed_key {
                 bwLabel = speed.contains("Up to") ? nil : speed
             }
-            
-            result.append(DeviceNode(name: name, iconName: iconName, bandwidthLabel: bwLabel, uid: uid, children: children))
+
+            result.append(DeviceNode(name: name, iconName: iconName, bandwidthLabel: bwLabel, uid: uid, children: children, dscActive: isDSC, displayDetails: displayDetails, rawBandwidth: rawBw))
         }
         return result.isEmpty ? nil : result
     }
 
+    /// Converts a hex vendor ID to a brand name
+    private func vendorNameFromID(_ hexId: String?) -> String? {
+        guard let hex = hexId?.lowercased() else { return nil }
+        let known: [String: String] = [
+            "10ac": "Dell Inc.",
+            "1e6d": "LG Electronics",
+            "04e8": "Samsung",
+            "04ca": "Asus",
+            "0472": "ViewSonic",
+            "04b3": "Lenovo",
+            "038d": "EIZO",
+            "0d2c": "Philips",
+            "38c2": "MSI",
+            "0452": "Micro-Star (MSI)",
+            "0586": "ZHC / LG",
+            "05ac": "Apple",
+        ]
+        return known[hex] ?? "Vendor 0x\(hex.uppercased())"
+    }
+
+    /// Decodes a hex serial string to ASCII if all bytes are printable, else returns hex
+    private func decodeSerial(_ hexSerial: String?) -> String? {
+        guard let hex = hexSerial, !hex.isEmpty else { return nil }
+        var ascii = ""
+        var idx = hex.startIndex
+        while idx < hex.endIndex, hex.distance(from: idx, to: hex.endIndex) >= 2 {
+            let next = hex.index(idx, offsetBy: 2)
+            if let byte = UInt8(hex[idx..<next], radix: 16), byte >= 32, byte < 127 {
+                ascii.append(Character(UnicodeScalar(byte)))
+            } else {
+                return hex.uppercased() // not clean ASCII — return raw hex
+            }
+            idx = next
+        }
+        return ascii.isEmpty ? hex.uppercased() : ascii
+    }
+
+    /// Builds a human-readable manufacture date from EDID week/year fields
+    private func buildMfgDate(week: String?, year: String?) -> String? {
+        guard let y = year else { return nil }
+        if let w = week, let wn = Int(w) {
+            // Each week is ~7.6 days; week 1 starts Jan 1
+            let months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+            let monthIdx = min(11, max(0, (wn - 1) * 12 / 52))
+            return "\(months[monthIdx]) \(y)"
+        }
+        return y
+    }
+
+    /// Maps system_profiler resolution category codes to human-readable labels
+    private func parseResolutionLabel(_ spKey: String?) -> String? {
+        guard let key = spKey else { return nil }
+        let map: [String: String] = [
+            "spdisplays_uwqhd": "Ultra-Wide QHD",
+            "spdisplays_4k":    "4K UHD",
+            "spdisplays_5k":    "5K",
+            "spdisplays_6k":    "6K",
+            "spdisplays_8k":    "8K",
+            "spdisplays_qhd":   "QHD",
+            "spdisplays_wqhd":  "WQHD",
+            "spdisplays_fhd":   "Full HD",
+            "spdisplays_hd":    "HD",
+            "spdisplays_wxga":  "WXGA",
+        ]
+        return map[key] ?? key.replacingOccurrences(of: "spdisplays_", with: "").uppercased()
+    }
+
+    /// Maps system_profiler connection type keys to human-readable strings
+    private func parseConnectionType(_ spKey: String?) -> String? {
+        guard let key = spKey else { return nil }
+        switch key {
+        case "spdisplays_displayport_connector":  return "DisplayPort"
+        case "spdisplays_hdmi_connector":         return "HDMI"
+        case "spdisplays_usbc_connector":         return "USB-C"
+        case "spdisplays_thunderbolt":            return "Thunderbolt"
+        case "spdisplays_internal":               return "Internal"
+        case "spdisplays_dp_over_usbc":           return "DisplayPort (USB-C)"
+        default: return key.replacingOccurrences(of: "spdisplays_", with: "").capitalized
+        }
+    }
+
+    /// Maps system_profiler depth strings to human-readable bit depth
+    private func parseBitDepth(_ spKey: String?) -> String? {
+        guard let key = spKey else { return nil }
+        switch key {
+        case "CGSThirtytwoBitColor":             return "8-bit (32-bit color)"
+        case "CGSSixtyFourBitColor":             return "10-bit (64-bit color)"
+        case "CGSOnehundredtwentyeightBitColor": return "16-bit (128-bit color)"
+        default:
+            if key.contains("64") { return "10-bit" }
+            if key.contains("32") { return "8-bit" }
+            return key
+        }
+    }
+
     // Example resolution string: "3440 x 1440 @ 60.00Hz"
-    private func calculateDisplayBandwidth(_ res: String) -> Double? {
+    private func calculateDisplayBandwidth(_ res: String, dscActive: Bool = false) -> Double? {
         let parts = res.replacingOccurrences(of: "Hz", with: "").components(separatedBy: .whitespaces)
         let numbers = parts.compactMap { Double($0) }
-        
+
         if numbers.count >= 3 {
             let width = numbers[0]
             let height = numbers[1]
             let refresh = numbers[2]
-            
-            let bandwidth = (width * height * refresh * 24.0 * 1.2) / 1_000_000_000.0
+
+            var bandwidth = (width * height * refresh * 24.0 * 1.2) / 1_000_000_000.0
+            if dscActive {
+                bandwidth /= 3.0  // DSC 1.2 achieves approximately 3:1 compression
+            }
             return bandwidth
         }
         return nil

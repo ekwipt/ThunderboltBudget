@@ -115,7 +115,7 @@ class LiveAnalytics: ObservableObject {
         Task {
             let diskMB = await fetchExternalDiskCumulativeMB()
             let netBytes = await fetchExternalNetworkCumulativeBytes()
-            let displayGbps = await fetchStaticDisplayGbps() // Already calculated in HardwareManager
+            let displayGbps = fetchStaticDisplayGbps() // Already calculated in HardwareManager
             
             await MainActor.run {
                 if isFirstTick {

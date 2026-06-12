@@ -48,8 +48,12 @@ class HardwareManager: ObservableObject {
             for port in ports {
                 if let label = port.bandwidthLabel {
                     let parts = label.components(separatedBy: "/")
-                    if let valStr = parts.first?.trimmingCharacters(in: .whitespaces), let val = Double(valStr) {
-                        total += val
+                    if let valStr = parts.first?.trimmingCharacters(in: .whitespaces) {
+                        // Extract numeric value from "10.0 Gbps" or "10.0"
+                        let numericOnly = valStr.replacingOccurrences(of: " Gbps", with: "").replacingOccurrences(of: " Gb/s", with: "")
+                        if let val = Double(numericOnly) {
+                            total += val
+                        }
                     }
                 }
             }

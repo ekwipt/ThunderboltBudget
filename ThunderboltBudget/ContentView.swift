@@ -5,54 +5,65 @@ import Charts
 struct ContentView: View {
     @ObservedObject var manager = HardwareManager.shared
     @ObservedObject var analytics = LiveAnalytics.shared
-    
+    @State private var selectedDisplayId: UUID? = nil
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Total System Header
-                if !manager.deviceTrees.isEmpty, !manager.isScanning {
-                    let total = manager.gatherSystemTotal()
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Total System Framework")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
-                            Text(String(format: "%.1f Gbps", total))
-                                .font(.system(size: 28, weight: .bold, design: .rounded))
+            HStack(spacing: 0) {
+                VStack(spacing: 0) {
+                    // Total System Header
+                    if !manager.deviceTrees.isEmpty, !manager.isScanning {
+                        let total = manager.gatherSystemTotal()
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Total System Framework")
+                                    .font(.headline)
+                                    .foregroundColor(.secondary)
+                                Text(String(format: "%.1f Gbps", total))
+                                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                            }
+                            Spacer()
                         }
-                        Spacer()
+                        .padding()
+                        .background(Color(NSColor.controlBackgroundColor))
+
+                        Divider()
+
+                        LiveTrafficChart(analytics: analytics)
+
+                        Divider()
                     }
-                    .padding()
-                    .background(Color(NSColor.controlBackgroundColor))
-                    
-                    Divider()
-                    
-                    LiveTrafficChart(analytics: analytics)
-                    
-                    Divider()
+
+                    // The Main Interactive Content Window
+                    if manager.deviceTrees.isEmpty || manager.isScanning {
+                        VStack(spacing: 12) {
+                            if manager.isScanning {
+                                ProgressView("Scanning Thunderbolt Bus...")
+                            } else {
+                                Text("No hardware detected.")
+                                    .font(.system(.caption, design: .monospaced))
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        .background(Color.black.opacity(0.05))
+                        .padding()
+                    } else {
+                        List {
+                            ForEach(manager.deviceTrees) { node in
+                                DeviceNodeView(node: node, expandedNodes: $manager.expandedNodes, selectedDisplayId: $selectedDisplayId)
+                            }
+                        }
+                        .background(Color.black.opacity(0.05))
+                        .padding()
+                    }
                 }
-                
-                // The Main Interactive Content Window
-                if manager.deviceTrees.isEmpty || manager.isScanning {
-                    VStack(spacing: 12) {
-                        if manager.isScanning {
-                            ProgressView("Scanning Thunderbolt Bus...")
-                        } else {
-                            Text("No hardware detected.")
-                                .font(.system(.caption, design: .monospaced))
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                    .background(Color.black.opacity(0.05))
-                    .padding()
-                } else {
-                    List {
-                        ForEach(manager.deviceTrees) { node in
-                            DeviceNodeView(node: node, expandedNodes: $manager.expandedNodes)
-                        }
-                    }
-                    .background(Color.black.opacity(0.05))
-                    .padding()
+
+                // Detail Panel
+                if let displayId = selectedDisplayId, let selectedNode = findNodeById(displayId, in: manager.deviceTrees) {
+                    Divider()
+                    DisplayDetailPanel(node: selectedNode, onClose: { selectedDisplayId = nil })
+                        .frame(minWidth: 320, maxWidth: 400)
+                        .background(Color(NSColor.controlBackgroundColor))
                 }
             }
             .navigationTitle("Thunderbolt Bandwidth Budget")
@@ -70,14 +81,27 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(minWidth: 650, minHeight: 850)
+        .frame(minWidth: 900, minHeight: 850)
+    }
+
+    private func findNodeById(_ id: UUID, in nodes: [DeviceNode]) -> DeviceNode? {
+        for node in nodes {
+            if node.id == id {
+                return node
+            }
+            if let children = node.children, let found = findNodeById(id, in: children) {
+                return found
+            }
+        }
+        return nil
     }
 }
 
 struct DeviceNodeView: View {
     let node: DeviceNode
     @Binding var expandedNodes: Set<UUID>
-    
+    @Binding var selectedDisplayId: UUID?
+
     var body: some View {
         if let children = node.children, !children.isEmpty {
             DisclosureGroup(
@@ -93,30 +117,54 @@ struct DeviceNodeView: View {
                 )
             ) {
                 ForEach(children) { child in
-                    DeviceNodeView(node: child, expandedNodes: $expandedNodes)
+                    DeviceNodeView(node: child, expandedNodes: $expandedNodes, selectedDisplayId: $selectedDisplayId)
                 }
             } label: {
-                DeviceRow(node: node)
+                DeviceRow(node: node, selectedDisplayId: $selectedDisplayId)
             }
         } else {
-            DeviceRow(node: node)
+            DeviceRow(node: node, selectedDisplayId: $selectedDisplayId)
         }
     }
 }
 
 struct DeviceRow: View {
     let node: DeviceNode
+    @Binding var selectedDisplayId: UUID?
+
+    var isDisplay: Bool {
+        return node.iconName == "display" || node.displayDetails != nil
+    }
+
+    var isSelected: Bool {
+        return selectedDisplayId == node.id
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Image(systemName: node.iconName)
                     .foregroundColor(.blue)
-                
+
                 Text(node.name)
                     .font(.system(.body, design: .rounded))
-                
+
+                if node.dscActive {
+                    Text("DSC")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Color.purple.opacity(0.15))
+                        .foregroundColor(.purple)
+                        .cornerRadius(4)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(Color.purple.opacity(0.4), lineWidth: 1)
+                        )
+                }
+
                 Spacer()
-                
+
                 if let bw = node.bandwidthLabel {
                     Text(bw)
                         .font(.caption.bold())
@@ -127,13 +175,13 @@ struct DeviceRow: View {
                         .cornerRadius(8)
                 }
             }
-            
+
             if let ratio = node.bandwidthRatio {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         Rectangle()
                             .fill(Color.secondary.opacity(0.2))
-                        
+
                         Rectangle()
                             .fill(pillColor(for: node))
                             .frame(width: max(0, min(CGFloat(ratio), 1.0) * geo.size.width))
@@ -145,8 +193,16 @@ struct DeviceRow: View {
             }
         }
         .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .background(isSelected ? Color.blue.opacity(0.1) : Color.clear)
+        .cornerRadius(6)
+        .onTapGesture {
+            if isDisplay && node.displayDetails != nil {
+                selectedDisplayId = isSelected ? nil : node.id
+            }
+        }
     }
-    
+
     private func pillColor(for node: DeviceNode) -> Color {
         guard let ratio = node.bandwidthRatio else {
             return Color.blue.opacity(0.8)
@@ -159,14 +215,14 @@ struct DeviceRow: View {
 
 struct LiveTrafficChart: View {
     @ObservedObject var analytics: LiveAnalytics
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Live Data Throughput")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .padding(.horizontal)
-            
+
             Chart {
                 ForEach(Array(analytics.totalTrafficGbps.enumerated()), id: \.offset) { index, value in
                     AreaMark(
@@ -174,7 +230,7 @@ struct LiveTrafficChart: View {
                         y: .value("Gbps", value)
                     )
                     .foregroundStyle(LinearGradient(gradient: Gradient(colors: [.blue.opacity(0.6), .blue.opacity(0.0)]), startPoint: .top, endPoint: .bottom))
-                    
+
                     LineMark(
                         x: .value("Time", index),
                         y: .value("Gbps", value)
@@ -193,5 +249,216 @@ struct LiveTrafficChart: View {
             .padding(.horizontal)
         }
         .padding(.vertical, 8)
+    }
+}
+
+struct DisplayDetailPanel: View {
+    let node: DeviceNode
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header with close button
+            HStack {
+                Text("Display Details")
+                    .font(.headline)
+                Spacer()
+                Button(action: onClose) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding()
+            .background(Color(NSColor.controlBackgroundColor))
+            .border(Color.gray.opacity(0.3), width: 1)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Display name
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Display")
+                            .font(.caption.bold())
+                            .foregroundColor(.secondary)
+                        Text(node.name)
+                            .font(.body)
+                    }
+
+                    Divider()
+
+                    // DSC Section
+                    if node.dscActive {
+                        DSCDetailSection(node: node)
+                        Divider()
+                    }
+
+                    // Display Details Section
+                    if let details = node.displayDetails {
+                        DisplayInfoSection(node: node, details: details)
+                        Divider()
+                        TechnicalDetailsSection(details: details)
+                    }
+
+                    Spacer()
+                }
+                .padding()
+            }
+        }
+    }
+}
+
+struct DSCDetailSection: View {
+    let node: DeviceNode
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("DSC Status")
+                    .font(.caption.bold())
+                    .foregroundColor(.secondary)
+                Spacer()
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                    Text("Active")
+                        .font(.caption.bold())
+                }
+            }
+
+            if let raw = node.rawBandwidth, let compressed = Double(node.bandwidthLabel?.replacingOccurrences(of: " Gbps", with: "") ?? "") {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Effective")
+                            .font(.caption)
+                        Spacer()
+                        Text(String(format: "%.1f Gbps", compressed))
+                            .font(.caption.bold())
+                            .foregroundColor(.blue)
+                    }
+                    HStack {
+                        Text("Raw (uncompressed)")
+                            .font(.caption)
+                        Spacer()
+                        Text(String(format: "%.1f Gbps", raw))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    HStack {
+                        Text("Compression")
+                            .font(.caption)
+                        Spacer()
+                        Text("3:1")
+                            .font(.caption.bold())
+                            .foregroundColor(.purple)
+                    }
+                }
+                .padding(.vertical, 8)
+                .padding(.horizontal, 10)
+                .background(Color.purple.opacity(0.05))
+                .cornerRadius(6)
+            }
+        }
+    }
+}
+
+struct DisplayInfoSection: View {
+    let node: DeviceNode
+    let details: DisplayDetails
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Display Information")
+                .font(.caption.bold())
+                .foregroundColor(.secondary)
+
+            DetailRowView(label: "Resolution", value: node.name.extractResolution() ?? "N/A")
+            if let native = details.nativeResolution {
+                DetailRowView(label: "Native Pixels", value: native)
+            }
+            if let type_ = details.maxResolution {
+                DetailRowView(label: "Display Type", value: type_)
+            }
+            if let conn = details.connectionType {
+                DetailRowView(label: "Connection", value: conn)
+            }
+            if let vendor = details.vendor {
+                DetailRowView(label: "Vendor", value: vendor)
+            }
+            if let model = details.model {
+                DetailRowView(label: "Product ID", value: model)
+            }
+        }
+    }
+}
+
+struct TechnicalDetailsSection: View {
+    let details: DisplayDetails
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Technical Details")
+                .font(.caption.bold())
+                .foregroundColor(.secondary)
+
+            if let uid = details.displayUID {
+                DetailRowView(label: "Display ID", value: uid)
+            }
+            if let serial = details.edidSerial {
+                DetailRowView(label: "Serial", value: serial)
+            }
+            if let mfg = details.edidMfgDate {
+                DetailRowView(label: "Manufactured", value: mfg)
+            }
+            if let dscV = details.dscVersion {
+                DetailRowView(label: "DSC Version", value: dscV)
+            }
+            if let dscM = details.dscMode {
+                DetailRowView(label: "DSC Mode", value: dscM)
+            }
+            if let hdr = details.hdrSupport {
+                DetailRowView(label: "HDR", value: hdr)
+            }
+            if let panel = details.panelType {
+                DetailRowView(label: "Panel Type", value: panel)
+            }
+        }
+    }
+}
+
+struct DetailRowView: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Spacer()
+            Text(value)
+                .font(.caption.bold())
+                .lineLimit(2)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+extension String {
+    func extractResolution() -> String? {
+        let pattern = #"(\d+)\s*x\s*(\d+)\s*@\s*([\d.]+)Hz"#
+        if let regex = try? NSRegularExpression(pattern: pattern) {
+            let range = NSRange(self.startIndex..., in: self)
+            if let match = regex.firstMatch(in: self, range: range) {
+                if let widthRange = Range(match.range(at: 1), in: self),
+                   let heightRange = Range(match.range(at: 2), in: self),
+                   let refreshRange = Range(match.range(at: 3), in: self) {
+                    let width = String(self[widthRange])
+                    let height = String(self[heightRange])
+                    let refresh = String(self[refreshRange])
+                    return "\(width) × \(height) @ \(refresh) Hz"
+                }
+            }
+        }
+        return nil
     }
 }
