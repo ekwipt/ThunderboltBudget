@@ -42,6 +42,23 @@ class HardwareManager: ObservableObject {
         }
     }
     
+    // iostat -I only reports its busiest few disks by default, which can silently exclude an
+    // idle-looking external drive (e.g. noisy Simulator disk images crowd it out). LiveAnalytics
+    // uses this to pass explicit disk names so the ones we actually track always show up.
+    func gatherTrackedDiskBSDNames() -> [String] {
+        var names: [String] = []
+        func walk(_ nodes: [DeviceNode]) {
+            for node in nodes {
+                if let bsd = node.peripheralDetails?.bsdName, bsd.hasPrefix("disk") {
+                    names.append(bsd)
+                }
+                if let children = node.children { walk(children) }
+            }
+        }
+        walk(deviceTrees)
+        return names
+    }
+
     func gatherSystemTotal() -> Double {
         var total = 0.0
         if let bus = deviceTrees.first(where: { $0.name == "Thunderbolt Bus" }), let ports = bus.children {

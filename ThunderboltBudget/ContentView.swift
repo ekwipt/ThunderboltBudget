@@ -61,7 +61,7 @@ struct ContentView: View {
                 // Detail Panel
                 if let displayId = selectedDisplayId, let selectedNode = findNodeById(displayId, in: manager.deviceTrees) {
                     Divider()
-                    DisplayDetailPanel(node: selectedNode, onClose: { selectedDisplayId = nil })
+                    DeviceDetailPanel(node: selectedNode, onClose: { selectedDisplayId = nil })
                         .frame(minWidth: 320, maxWidth: 400)
                         .background(Color(NSColor.controlBackgroundColor))
                 }
@@ -131,13 +131,20 @@ struct DeviceNodeView: View {
 struct DeviceRow: View {
     let node: DeviceNode
     @Binding var selectedDisplayId: UUID?
+    @ObservedObject private var liveAnalytics = LiveAnalytics.shared
 
-    var isDisplay: Bool {
-        return node.iconName == "display" || node.displayDetails != nil
+    var isClickable: Bool {
+        return node.displayDetails != nil || node.peripheralDetails != nil
     }
 
     var isSelected: Bool {
         return selectedDisplayId == node.id
+    }
+
+    // Real, currently-measured throughput (from iostat/netstat), as opposed to bandwidthLabel's
+    // static negotiated-link "budget" figure. nil when this node has no storage/network descendant.
+    var liveGbps: Double? {
+        liveAnalytics.liveGbps(for: node)
     }
 
     var body: some View {
@@ -164,6 +171,24 @@ struct DeviceRow: View {
                 }
 
                 Spacer()
+
+                if let live = liveGbps {
+                    HStack(spacing: 3) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 9))
+                        Text(Self.liveLabel(live))
+                            .font(.caption2.bold())
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .background(Color.mint.opacity(0.18))
+                    .foregroundColor(.mint)
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.mint.opacity(0.5), lineWidth: 1)
+                    )
+                }
 
                 if let bw = node.bandwidthLabel {
                     Text(bw)
@@ -197,7 +222,7 @@ struct DeviceRow: View {
         .background(isSelected ? Color.blue.opacity(0.1) : Color.clear)
         .cornerRadius(6)
         .onTapGesture {
-            if isDisplay && node.displayDetails != nil {
+            if isClickable {
                 selectedDisplayId = isSelected ? nil : node.id
             }
         }
@@ -210,6 +235,11 @@ struct DeviceRow: View {
         if ratio >= 0.80 { return Color.red }
         else if ratio >= 0.50 { return Color.orange }
         else { return Color.green }
+    }
+
+    static func liveLabel(_ gbps: Double) -> String {
+        if gbps >= 1.0 { return String(format: "%.2f Gbps", gbps) }
+        return String(format: "%.0f Mbps", gbps * 1000)
     }
 }
 
@@ -252,15 +282,17 @@ struct LiveTrafficChart: View {
     }
 }
 
-struct DisplayDetailPanel: View {
+struct DeviceDetailPanel: View {
     let node: DeviceNode
     let onClose: () -> Void
+    @ObservedObject private var liveAnalytics = LiveAnalytics.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header with close button
             HStack {
-                Text("Display Details")
+                Image(systemName: node.iconName)
+                    .foregroundColor(.blue)
+                Text("Details")
                     .font(.headline)
                 Spacer()
                 Button(action: onClose) {
@@ -274,28 +306,60 @@ struct DisplayDetailPanel: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    // Display name
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Display")
+                        Text("Device")
                             .font(.caption.bold())
                             .foregroundColor(.secondary)
                         Text(node.name)
                             .font(.body)
                     }
 
-                    Divider()
-
-                    // DSC Section
-                    if node.dscActive {
-                        DSCDetailSection(node: node)
+                    if let bw = node.bandwidthLabel {
                         Divider()
+                        DetailRowView(label: "Bandwidth", value: bw)
                     }
 
-                    // Display Details Section
+                    if let live = liveAnalytics.liveGbps(for: node) {
+                        Divider()
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Live Throughput")
+                                    .font(.caption.bold())
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                HStack(spacing: 4) {
+                                    Image(systemName: "bolt.fill")
+                                        .foregroundColor(.mint)
+                                    Text("Measured, not budget")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            Text(DeviceRow.liveLabel(live))
+                                .font(.title3.bold())
+                                .foregroundColor(.mint)
+                        }
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 10)
+                        .background(Color.mint.opacity(0.08))
+                        .cornerRadius(6)
+                    }
+
+                    if node.dscActive {
+                        Divider()
+                        DSCDetailSection(node: node)
+                    }
+
                     if let details = node.displayDetails {
+                        Divider()
                         DisplayInfoSection(node: node, details: details)
                         Divider()
                         TechnicalDetailsSection(details: details)
+                    }
+
+                    if let details = node.peripheralDetails {
+                        Divider()
+                        PeripheralInfoSection(details: details)
                     }
 
                     Spacer()
@@ -419,6 +483,123 @@ struct TechnicalDetailsSection: View {
             }
             if let panel = details.panelType {
                 DetailRowView(label: "Panel Type", value: panel)
+            }
+        }
+    }
+}
+
+struct PeripheralInfoSection: View {
+    let details: PeripheralDetails
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+
+            // --- Thunderbolt section ---
+            let hasTB = [details.tbMode, details.tbDeviceId, details.tbVendorId,
+                         details.tbRevision, details.tbFirmware, details.tbRouteString,
+                         details.tbDomainUUID].contains { $0 != nil } || details.tbDownstreamPorts != nil
+            if hasTB {
+                Text("Thunderbolt")
+                    .font(.caption.bold())
+                    .foregroundColor(.secondary)
+                if let vendor = details.vendor {
+                    DetailRowView(label: "Vendor", value: vendor)
+                }
+                if let mode = details.tbMode {
+                    DetailRowView(label: "Mode", value: mode)
+                }
+                if let fw = details.tbFirmware {
+                    DetailRowView(label: "Firmware", value: fw)
+                }
+                if let devId = details.tbDeviceId {
+                    DetailRowView(label: "Device ID", value: devId)
+                }
+                if let vendId = details.tbVendorId {
+                    DetailRowView(label: "Vendor ID", value: vendId)
+                }
+                if let rev = details.tbRevision {
+                    DetailRowView(label: "Revision", value: rev)
+                }
+                if let route = details.tbRouteString {
+                    DetailRowView(label: "Route", value: route)
+                }
+                if let uid = details.uid {
+                    DetailRowView(label: "UID", value: uid)
+                }
+                if let uuid = details.tbDomainUUID {
+                    DetailRowView(label: "Domain UUID", value: uuid)
+                }
+                if let ports = details.tbDownstreamPorts, !ports.isEmpty {
+                    Divider()
+                    Text("Daisy-Chain Ports")
+                        .font(.caption.bold())
+                        .foregroundColor(.secondary)
+                    ForEach(ports, id: \.portNumber) { port in
+                        HStack {
+                            Text("Port \(port.portNumber)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            if port.isConnected {
+                                Circle()
+                                    .fill(Color.green)
+                                    .frame(width: 6, height: 6)
+                                Text(port.speed)
+                                    .font(.caption.bold())
+                            } else {
+                                Circle()
+                                    .fill(Color.secondary.opacity(0.4))
+                                    .frame(width: 6, height: 6)
+                                Text("Empty")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+            }
+
+            // --- USB section ---
+            let hasUSB = [details.speed, details.usbVersion, details.deviceVersion,
+                          details.vendorId, details.productId, details.serialNumber,
+                          details.powerUsed, details.locationId].contains { $0 != nil }
+            if hasUSB {
+                if hasTB { Divider() }
+                Text("USB")
+                    .font(.caption.bold())
+                    .foregroundColor(.secondary)
+                if !hasTB, let vendor = details.vendor {
+                    DetailRowView(label: "Vendor", value: vendor)
+                }
+                if let speed = details.speed {
+                    DetailRowView(label: "Speed", value: speed)
+                }
+                if let usbVersion = details.usbVersion {
+                    DetailRowView(label: "USB Version", value: usbVersion)
+                }
+                if let deviceVersion = details.deviceVersion {
+                    DetailRowView(label: "Device Version", value: deviceVersion)
+                }
+                if let vendorId = details.vendorId {
+                    DetailRowView(label: "Vendor ID", value: vendorId)
+                }
+                if let productId = details.productId {
+                    DetailRowView(label: "Product ID", value: productId)
+                }
+                if let serial = details.serialNumber {
+                    DetailRowView(label: "Serial", value: serial)
+                }
+                if let powerUsed = details.powerUsed {
+                    let powerStr = details.powerAvailable.map { "\(powerUsed) / \($0)" } ?? powerUsed
+                    DetailRowView(label: "Power", value: powerStr)
+                }
+                if !hasTB, let uid = details.uid {
+                    DetailRowView(label: "UID", value: uid)
+                }
+                if let locationId = details.locationId {
+                    DetailRowView(label: "Location ID", value: locationId)
+                }
             }
         }
     }

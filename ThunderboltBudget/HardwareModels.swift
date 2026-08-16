@@ -31,6 +31,29 @@ struct SPNode: Codable {
     var spdisplays_main: String?             // "spdisplays_yes" if primary display
     var spdisplays_mirror: String?           // mirror state
 
+    // USB device fields
+    var vendorId: String?
+    var productId: String?
+    var serialNum: String?
+    var speed: String?
+    var bcdDevice: String?
+    var bcdUsb: String?
+    var busPower: String?
+    var busPowerUsed: String?
+    var locationId: String?
+
+    // Thunderbolt device fields
+    var device_id_key: String?
+    var device_revision_key: String?
+    var switch_version_key: String?
+    var vendor_id_key: String?
+    var route_string_key: String?
+    var mode_key: String?
+    var domain_uuid_key: String?
+    var receptacle_2_tag: ReceptacleTag?
+    var receptacle_3_tag: ReceptacleTag?
+    var receptacle_4_tag: ReceptacleTag?
+
     enum CodingKeys: String, CodingKey {
         case _name = "_name"
         case _items = "_items"
@@ -51,11 +74,33 @@ struct SPNode: Codable {
         case spdisplays_pixelresolution = "spdisplays_pixelresolution"
         case spdisplays_main      = "spdisplays_main"
         case spdisplays_mirror    = "spdisplays_mirror"
+        case vendorId             = "vendor_id"
+        case productId            = "product_id"
+        case serialNum            = "serial_num"
+        case speed                = "speed"
+        case bcdDevice            = "bcd_device"
+        case bcdUsb               = "bcd_usb"
+        case busPower             = "bus_power"
+        case busPowerUsed         = "bus_power_used"
+        case locationId           = "location_id"
+        case device_id_key        = "device_id_key"
+        case device_revision_key  = "device_revision_key"
+        case switch_version_key   = "switch_version_key"
+        case vendor_id_key        = "vendor_id_key"
+        case route_string_key     = "route_string_key"
+        case mode_key             = "mode_key"
+        case domain_uuid_key      = "domain_uuid_key"
+        case receptacle_2_tag     = "receptacle_2_tag"
+        case receptacle_3_tag     = "receptacle_3_tag"
+        case receptacle_4_tag     = "receptacle_4_tag"
     }
 }
 
 struct ReceptacleTag: Codable {
     var current_speed_key: String?
+    var link_status_key: String?
+    var micro_version_key: String?
+    var receptacle_status_key: String?
 }
 
 struct DisplayDetails: Hashable {
@@ -76,6 +121,51 @@ struct DisplayDetails: Hashable {
     let panelType: String?
 }
 
+struct TBPortStatus: Hashable {
+    let portNumber: Int
+    let speed: String
+    let isConnected: Bool
+    let firmwareVersion: String?
+}
+
+struct PeripheralDetails: Hashable {
+    // Common
+    let vendor: String?
+    let uid: String?
+
+    // USB
+    let vendorId: String?
+    let productId: String?
+    let serialNumber: String?
+    let speed: String?
+    let usbVersion: String?
+    let deviceVersion: String?
+    let powerAvailable: String?
+    let powerUsed: String?
+    let locationId: String?
+
+    // Thunderbolt
+    let tbDeviceId: String?
+    let tbVendorId: String?
+    let tbRevision: String?
+    let tbFirmware: String?
+    let tbMode: String?
+    let tbRouteString: String?
+    let tbDomainUUID: String?
+    let tbDownstreamPorts: [TBPortStatus]?
+
+    // BSD identifier (e.g. "disk4", "en5") used to correlate this device with live iostat/netstat throughput
+    let bsdName: String?
+
+    var hasAnyDetail: Bool {
+        let strings: [String?] = [vendor, uid, vendorId, productId, serialNumber, speed,
+                                   usbVersion, deviceVersion, powerAvailable, powerUsed,
+                                   locationId, tbDeviceId, tbVendorId, tbRevision,
+                                   tbFirmware, tbMode, tbRouteString, tbDomainUUID]
+        return strings.contains { $0 != nil } || tbDownstreamPorts != nil
+    }
+}
+
 struct DeviceNode: Identifiable, Hashable {
     let id: UUID
     let name: String
@@ -87,8 +177,9 @@ struct DeviceNode: Identifiable, Hashable {
     var dscActive: Bool
     var displayDetails: DisplayDetails?
     var rawBandwidth: Double?  // Uncompressed bandwidth for displays with DSC
+    var peripheralDetails: PeripheralDetails?
 
-    init(id: UUID = UUID(), name: String, iconName: String = "cube", bandwidthLabel: String? = nil, uid: String? = nil, children: [DeviceNode]? = nil, bandwidthRatio: Double? = nil, dscActive: Bool = false, displayDetails: DisplayDetails? = nil, rawBandwidth: Double? = nil) {
+    init(id: UUID = UUID(), name: String, iconName: String = "cube", bandwidthLabel: String? = nil, uid: String? = nil, children: [DeviceNode]? = nil, bandwidthRatio: Double? = nil, dscActive: Bool = false, displayDetails: DisplayDetails? = nil, rawBandwidth: Double? = nil, peripheralDetails: PeripheralDetails? = nil) {
         self.id = id
         self.name = name
         self.iconName = iconName
@@ -99,5 +190,6 @@ struct DeviceNode: Identifiable, Hashable {
         self.dscActive = dscActive
         self.displayDetails = displayDetails
         self.rawBandwidth = rawBandwidth
+        self.peripheralDetails = peripheralDetails
     }
 }

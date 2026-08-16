@@ -38,6 +38,8 @@ struct HardwareScanner {
         let displayMappings = IORegTopologyParser.getDisplayMappings()
         let dscDisplayNames = IORegTopologyParser.getDSCActiveDisplayNames()
         let displayDetailsMap = IORegTopologyParser.getDisplayDetails()
+        let usbDetails = IORegTopologyParser.getUSBDeviceDetails()
+        let bsdMappings = IORegTopologyParser.getBSDDeviceMappings()
 
         // 2. Extract displays
         var allDisplays: [DeviceNode] = []
@@ -58,6 +60,10 @@ struct HardwareScanner {
             usbNodes = mapped.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         }
         
+        // Snapshot before injection so the Displays section always lists every display,
+        // even those that get placed under a Thunderbolt port.
+        let allDisplaysSnapshot = allDisplays
+
         if let tbNodes = root.SPThunderboltDataType,
            let mapped = mapNodes(tbNodes, defaultIcon: "bolt.fill") {
             let sortedMapped = mapped.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
@@ -77,7 +83,7 @@ struct HardwareScanner {
                 let ratio = min(totalGbps / maxCap, 1.0)
                 let newLabel = String(format: "%.1f / %.0f Gbps", totalGbps, maxCap)
                 
-                let newNode = DeviceNode(id: port.id, name: port.name, iconName: port.iconName, bandwidthLabel: newLabel, uid: port.uid, children: port.children, bandwidthRatio: ratio)
+                let newNode = DeviceNode(id: port.id, name: port.name, iconName: port.iconName, bandwidthLabel: newLabel, uid: port.uid, children: port.children, bandwidthRatio: ratio, peripheralDetails: port.peripheralDetails)
                 customizedRootPorts.append(newNode)
             }
             
@@ -88,12 +94,125 @@ struct HardwareScanner {
             finalNodes.append(DeviceNode(name: "USB Bus", iconName: "command.circle.fill", children: usbNodes))
         }
         
-        // 4. Any leftover displays go into the root Displays folder
-        if !allDisplays.isEmpty {
-            finalNodes.append(DeviceNode(name: "Displays", iconName: "rectangle.stack.fill", children: allDisplays))
+        // 4. All displays go into the root Displays folder (external displays may also appear under their TB port)
+        if !allDisplaysSnapshot.isEmpty {
+            finalNodes.append(DeviceNode(name: "Displays", iconName: "rectangle.stack.fill", children: allDisplaysSnapshot))
         }
         
-        return pruneEmptyHubs(from: finalNodes)
+        let enriched = enrichWithUSBDetails(pruneEmptyHubs(from: finalNodes), usbDetails: usbDetails)
+        return attachLiveBSDNames(to: enriched, mappings: bsdMappings)
+    }
+
+    // Correlates physical devices with the BSD identifiers iostat/netstat report throughput for,
+    // so LiveAnalytics can be matched back to a specific device in the tree.
+    private func attachLiveBSDNames(to nodes: [DeviceNode], mappings: IORegTopologyParser.BSDMappingResult) -> [DeviceNode] {
+        var usedBSDNames = Set<String>()
+
+        func withBSDName(_ pd: PeripheralDetails, _ bsdName: String) -> PeripheralDetails {
+            PeripheralDetails(
+                vendor: pd.vendor, uid: pd.uid, vendorId: pd.vendorId, productId: pd.productId,
+                serialNumber: pd.serialNumber, speed: pd.speed, usbVersion: pd.usbVersion, deviceVersion: pd.deviceVersion,
+                powerAvailable: pd.powerAvailable, powerUsed: pd.powerUsed, locationId: pd.locationId,
+                tbDeviceId: pd.tbDeviceId, tbVendorId: pd.tbVendorId, tbRevision: pd.tbRevision, tbFirmware: pd.tbFirmware,
+                tbMode: pd.tbMode, tbRouteString: pd.tbRouteString, tbDomainUUID: pd.tbDomainUUID, tbDownstreamPorts: pd.tbDownstreamPorts,
+                bsdName: bsdName
+            )
+        }
+
+        // Assigns bsdName to the first node (depth-first) whose name fuzzy-matches candidateName
+        // and doesn't already have a bsdName. Stops after one match so a bsdName is never attached twice.
+        func tryAssign(_ bsdName: String, matching candidateName: String, in nodeList: [DeviceNode]) -> (nodes: [DeviceNode], assigned: Bool) {
+            var assigned = false
+            var newNodes: [DeviceNode] = []
+            for node in nodeList {
+                var n = node
+                if !assigned, let children = n.children {
+                    let (newChildren, childAssigned) = tryAssign(bsdName, matching: candidateName, in: children)
+                    n.children = newChildren
+                    assigned = childAssigned
+                }
+                if !assigned, let pd = n.peripheralDetails, pd.bsdName == nil,
+                   n.name.localizedCaseInsensitiveContains(candidateName) || candidateName.localizedCaseInsensitiveContains(n.name) {
+                    n.peripheralDetails = withBSDName(pd, bsdName)
+                    assigned = true
+                }
+                newNodes.append(n)
+            }
+            return (newNodes, assigned)
+        }
+
+        // Pass 1: match by device name, preferring the most specific (innermost) ancestor name
+        // first — e.g. try "USB 10/100/1000 LAN" (the actual accessory) before "USB5906 Smart Hub"
+        // (the internal hub chip it happens to be plugged into, which several devices might share).
+        var result = nodes
+        for (bsdName, candidates) in mappings.candidatesByBSDName {
+            guard !usedBSDNames.contains(bsdName) else { continue }
+            for candidateName in candidates {
+                let (updated, assigned) = tryAssign(bsdName, matching: candidateName, in: result)
+                if assigned {
+                    result = updated
+                    usedBSDNames.insert(bsdName)
+                    break
+                }
+            }
+        }
+
+        // Pass 2: elimination fallback. Thunderbolt-tunneled NVMe enclosures (e.g. OWC Express 1M2)
+        // register in IORegistry under their raw internal drive's PCIe chain, not their enclosure's
+        // product name, so name matching can't find them. If exactly one physical disk and exactly
+        // one storage-looking device are both still unmatched, they're almost certainly each other.
+        let leftoverDisks = mappings.allPhysicalDisks.subtracting(usedBSDNames)
+        if leftoverDisks.count == 1, let onlyDisk = leftoverDisks.first {
+            let storageKeywords = ["ssd", "nvme", "express", "passport", "drive", "disk", "storage", "raid"]
+            var storageLeafNames: [String] = []
+            func findStorageLeaves(_ nodeList: [DeviceNode]) {
+                for node in nodeList {
+                    if let children = node.children, !children.isEmpty {
+                        findStorageLeaves(children)
+                    } else if node.peripheralDetails?.bsdName == nil,
+                              storageKeywords.contains(where: { node.name.lowercased().contains($0) }) {
+                        storageLeafNames.append(node.name)
+                    }
+                }
+            }
+            findStorageLeaves(result)
+            if storageLeafNames.count == 1 {
+                let targetName = storageLeafNames[0]
+                func assign(_ nodeList: [DeviceNode]) -> [DeviceNode] {
+                    nodeList.map { node in
+                        var n = node
+                        if let children = n.children { n.children = assign(children) }
+                        if n.name == targetName, let pd = n.peripheralDetails, pd.bsdName == nil {
+                            n.peripheralDetails = withBSDName(pd, onlyDisk)
+                        }
+                        return n
+                    }
+                }
+                result = assign(result)
+            }
+        }
+
+        return result
+    }
+
+    // Walk the full node tree and attach USB details from IORegistry to any node that lacks peripheral details
+    private func enrichWithUSBDetails(_ nodes: [DeviceNode], usbDetails: [String: PeripheralDetails]) -> [DeviceNode] {
+        nodes.map { node in
+            var n = node
+            if let children = n.children {
+                n.children = enrichWithUSBDetails(children, usbDetails: usbDetails)
+            }
+            if n.peripheralDetails == nil && n.displayDetails == nil {
+                for (productName, details) in usbDetails {
+                    if n.name.localizedCaseInsensitiveContains(productName) ||
+                       productName.localizedCaseInsensitiveContains(n.name) {
+                        n.peripheralDetails = details
+                        break
+                    }
+                }
+            }
+            return n
+        }
     }
 
     // Prune unused internal hubs (e.g. empty USB hubs that monitor structural boards expose)
@@ -310,6 +429,7 @@ struct HardwareScanner {
             var isDSC = false
             var rawBw: Double? = nil
             var displayDetails: DisplayDetails? = nil
+            var peripheralDetails: PeripheralDetails? = nil
 
             if let res = node._spdisplays_resolution {
                 let cleanRes = res.replacingOccurrences(of: ".00Hz", with: "Hz")
@@ -370,7 +490,43 @@ struct HardwareScanner {
                 bwLabel = speed.contains("Up to") ? nil : speed
             }
 
-            result.append(DeviceNode(name: name, iconName: iconName, bandwidthLabel: bwLabel, uid: uid, children: children, dscActive: isDSC, displayDetails: displayDetails, rawBandwidth: rawBw))
+            // Build peripheral details for non-display nodes
+            if node._spdisplays_resolution == nil {
+                // Collect downstream TB port statuses (ports 2–4 are downstream on hubs)
+                var tbPorts: [TBPortStatus] = []
+                for (portNum, tag) in [(2, node.receptacle_2_tag), (3, node.receptacle_3_tag), (4, node.receptacle_4_tag)] {
+                    guard let t = tag else { continue }
+                    let connected = t.receptacle_status_key == "receptacle_connected"
+                    let portSpeed = t.current_speed_key ?? "Unknown"
+                    tbPorts.append(TBPortStatus(portNumber: portNum, speed: portSpeed, isConnected: connected, firmwareVersion: t.micro_version_key))
+                }
+
+                let pd = PeripheralDetails(
+                    vendor: node.vendor_name_key,
+                    uid: uid,
+                    vendorId: node.vendorId,
+                    productId: node.productId,
+                    serialNumber: node.serialNum,
+                    speed: node.speed,
+                    usbVersion: node.bcdUsb,
+                    deviceVersion: node.bcdDevice,
+                    powerAvailable: node.busPower,
+                    powerUsed: node.busPowerUsed,
+                    locationId: node.locationId,
+                    tbDeviceId: node.device_id_key,
+                    tbVendorId: node.vendor_id_key,
+                    tbRevision: node.device_revision_key,
+                    tbFirmware: node.switch_version_key,
+                    tbMode: node.mode_key.map { Self.mapTBMode($0) },
+                    tbRouteString: node.route_string_key,
+                    tbDomainUUID: node.domain_uuid_key,
+                    tbDownstreamPorts: tbPorts.isEmpty ? nil : tbPorts,
+                    bsdName: nil
+                )
+                if pd.hasAnyDetail { peripheralDetails = pd }
+            }
+
+            result.append(DeviceNode(name: name, iconName: iconName, bandwidthLabel: bwLabel, uid: uid, children: children, dscActive: isDSC, displayDetails: displayDetails, rawBandwidth: rawBw, peripheralDetails: peripheralDetails))
         }
         return result.isEmpty ? nil : result
     }
@@ -487,6 +643,17 @@ struct HardwareScanner {
             return bandwidth
         }
         return nil
+    }
+
+    static func mapTBMode(_ key: String) -> String {
+        switch key {
+        case "usb_four":  return "USB4 / Thunderbolt 4"
+        case "tb3":       return "Thunderbolt 3"
+        case "tb2":       return "Thunderbolt 2"
+        case "tb1":       return "Thunderbolt 1"
+        case "usb_three": return "USB 3"
+        default:          return key
+        }
     }
 
     // Detect macOS Model and map internal bus indexes to literal chassis holes.

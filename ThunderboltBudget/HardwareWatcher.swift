@@ -85,14 +85,16 @@ class LiveAnalytics: ObservableObject {
     static let shared = LiveAnalytics()
     
     @Published var totalTrafficGbps: [Double] = Array(repeating: 0.0, count: 60)
-    
+    // Live, real-time throughput per BSD identifier (e.g. "disk4", "en5"), updated every second.
+    // Distinct from the static per-port "budget" bars: this is measured, not negotiated link capacity.
+    @Published var liveGbpsByBSDName: [String: Double] = [:]
+
     private var timer: Timer?
-    
-    // Track previous cumulative totals to calculate deltas
-    private var lastExternalDiskMB: Double = 0
-    private var lastExternalNetBytes: Double = 0
-    private var lastStaticDisplayGbps: Double = 0
-    
+
+    // Track previous cumulative totals per device to calculate deltas
+    private var lastDiskMBByDevice: [String: Double] = [:]
+    private var lastNetBytesByInterface: [String: Double] = [:]
+
     // We only begin calculating differences after the first tick finishes storing state
     private var isFirstTick = true
     
@@ -113,37 +115,46 @@ class LiveAnalytics: ObservableObject {
     
     private func pollMetrics() {
         Task {
-            let diskMB = await fetchExternalDiskCumulativeMB()
-            let netBytes = await fetchExternalNetworkCumulativeBytes()
+            let trackedDisks = await MainActor.run { HardwareManager.shared.gatherTrackedDiskBSDNames() }
+            let diskMBByDevice = await fetchExternalDiskCumulativeMB(tracking: trackedDisks)
+            let netBytesByInterface = await fetchExternalNetworkCumulativeBytes()
             let displayGbps = fetchStaticDisplayGbps() // Already calculated in HardwareManager
-            
+
             await MainActor.run {
                 if isFirstTick {
                     isFirstTick = false
                 } else {
-                    // Calculate deltas over the 1-second interval
-                    let diskDeltaMB = max(0, diskMB - lastExternalDiskMB)
-                    let netDeltaBytes = max(0, netBytes - lastExternalNetBytes)
-                    
-                    // Convert everything to Gbps
-                    let diskGbps = (diskDeltaMB * 8) / 1000.0
-                    let netGbps = (netDeltaBytes * 8) / 1_000_000_000.0
-                    
+                    var newLiveByBSDName: [String: Double] = [:]
+                    var diskGbps = 0.0
+                    for (device, cumulativeMB) in diskMBByDevice {
+                        let deltaMB = max(0, cumulativeMB - (lastDiskMBByDevice[device] ?? cumulativeMB))
+                        let gbps = (deltaMB * 8) / 1000.0
+                        newLiveByBSDName[device] = gbps
+                        diskGbps += gbps
+                    }
+                    var netGbps = 0.0
+                    for (iface, cumulativeBytes) in netBytesByInterface {
+                        let deltaBytes = max(0, cumulativeBytes - (lastNetBytesByInterface[iface] ?? cumulativeBytes))
+                        let gbps = (deltaBytes * 8) / 1_000_000_000.0
+                        newLiveByBSDName[iface] = gbps
+                        netGbps += gbps
+                    }
+                    liveGbpsByBSDName = newLiveByBSDName
+
                     let newTotal = diskGbps + netGbps + displayGbps
-                    
+
                     totalTrafficGbps.append(newTotal)
                     if totalTrafficGbps.count > 60 {
                         totalTrafficGbps.removeFirst()
                     }
-                    
+
                     if newTotal >= 36.0 {
                         self.triggerBottleneckWarning(consumption: newTotal)
                     }
                 }
-                
-                lastExternalDiskMB = diskMB
-                lastExternalNetBytes = netBytes
-                lastStaticDisplayGbps = displayGbps
+
+                lastDiskMBByDevice = diskMBByDevice
+                lastNetBytesByInterface = netBytesByInterface
             }
         }
     }
@@ -164,54 +175,59 @@ class LiveAnalytics: ObservableObject {
         UNUserNotificationCenter.current().add(request)
     }
     
-    private func fetchExternalDiskCumulativeMB() async -> Double {
-        let output = await runShell("iostat -I")
-        var sum = 0.0
-        
+    private func fetchExternalDiskCumulativeMB(tracking trackedDisks: [String]) async -> [String: Double] {
+        // Without explicit disk names, iostat -I only reports its busiest few disks by default —
+        // an idle-looking external drive can get silently crowded out (e.g. by noisy Simulator
+        // disk images), even mid-transfer. Naming the disks we actually track guarantees they appear.
+        let diskArgs = trackedDisks.filter { $0.hasPrefix("disk") && $0.dropFirst(4).allSatisfy { $0.isNumber } }
+        let command = diskArgs.isEmpty ? "iostat -I" : "iostat -I \(diskArgs.joined(separator: " "))"
+        let output = await runShell(command)
+        var result: [String: Double] = [:]
+
         let lines = output.components(separatedBy: .newlines)
-        guard lines.count >= 3 else { return 0.0 }
-        
+        guard lines.count >= 3 else { return result }
+
         // Find columns dynamically
         let headers = lines[0].components(separatedBy: .whitespaces).filter { !$0.isEmpty }
         let stats = lines[2].components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-        
+
         for (idx, disk) in headers.enumerated() {
             if disk == "disk0" { continue } // Ignore internal NVMe
-            
+
             // iostat pairs stats in blocks of 3: KB/t, xfrs, MB
             let mbIndex = (idx * 3) + 2
-            if mbIndex < stats.count {
-                if let val = Double(stats[mbIndex]) {
-                    sum += val
-                }
+            if mbIndex < stats.count, let val = Double(stats[mbIndex]) {
+                result[disk] = val
             }
         }
-        return sum
+        return result
     }
-    
-    private func fetchExternalNetworkCumulativeBytes() async -> Double {
+
+    private func fetchExternalNetworkCumulativeBytes() async -> [String: Double] {
         let output = await runShell("netstat -ib")
-        var sum = 0.0
-        
+        var result: [String: Double] = [:]
+
         let lines = output.components(separatedBy: .newlines)
         for line in lines {
             let cols = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
             guard cols.count > 10 else { continue }
-            
+
             let name = cols[0]
             // We want external physical adapters (usually enX where X is not 0 (Wi-Fi)).
             // Ignore loopback (lo0), awdl, llw, bridge, utun
             if name == "en0" || name.hasPrefix("lo") || name.hasPrefix("awdl") || name.hasPrefix("llw") || name.hasPrefix("bridge") || name.hasPrefix("utun") {
                 continue
             }
-            
-            // On netstat -ib, standard output usually has Ibytes at col 6 or 7, and Obytes at col 9 or 10.
+
+            // netstat -ib lists one row per address family (Link#, inet, inet6) for the same
+            // interface; they report the same cumulative counters, so take the max instead of
+            // summing to avoid inflating a single interface's traffic 2-3x.
             if let ibytes = Double(cols[6]), let obytes = Double(cols[9]) {
-                sum += (ibytes + obytes)
+                result[name] = max(result[name] ?? 0, ibytes + obytes)
             }
         }
-        
-        return sum
+
+        return result
     }
     
     @MainActor
@@ -220,6 +236,25 @@ class LiveAnalytics: ObservableObject {
         return HardwareManager.shared.gatherSystemTotal() 
     }
     
+    // Live measured throughput for a device (if it has a bsdName) or the sum across
+    // its subtree (if it's a hub/port). Returns nil when no descendant has live data at all,
+    // so nodes unrelated to storage/network (displays, HID devices, generic hubs) show nothing.
+    func liveGbps(for node: DeviceNode) -> Double? {
+        if let bsdName = node.peripheralDetails?.bsdName {
+            return liveGbpsByBSDName[bsdName] ?? 0
+        }
+        guard let children = node.children else { return nil }
+        var total = 0.0
+        var foundAny = false
+        for child in children {
+            if let value = liveGbps(for: child) {
+                total += value
+                foundAny = true
+            }
+        }
+        return foundAny ? total : nil
+    }
+
     private func runShell(_ command: String) async -> String {
         return await Task.detached {
             let process = Process()
