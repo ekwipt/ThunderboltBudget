@@ -84,7 +84,8 @@ class HardwareWatcher {
 class LiveAnalytics: ObservableObject {
     static let shared = LiveAnalytics()
     
-    @Published var totalTrafficGbps: [Double] = Array(repeating: 0.0, count: 60)
+    // 120 samples at the 0.5s poll interval keeps the chart's window at 60 seconds.
+    @Published var totalTrafficGbps: [Double] = Array(repeating: 0.0, count: 120)
     // Live, real-time throughput per BSD identifier (e.g. "disk4", "en5"), updated every second.
     // Distinct from the static per-port "budget" bars: this is measured, not negotiated link capacity.
     @Published var liveGbpsByBSDName: [String: Double] = [:]
@@ -94,6 +95,7 @@ class LiveAnalytics: ObservableObject {
     // Track previous cumulative totals per device to calculate deltas
     private var lastDiskMBByDevice: [String: Double] = [:]
     private var lastNetBytesByInterface: [String: Double] = [:]
+    private var lastPollDate: Date = Date()
 
     // We only begin calculating differences after the first tick finishes storing state
     private var isFirstTick = true
@@ -106,7 +108,7 @@ class LiveAnalytics: ObservableObject {
             if granted { print("Notifications authorized") }
         }
         
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.pollMetrics()
         }
         // Force immediate first tick
@@ -121,21 +123,26 @@ class LiveAnalytics: ObservableObject {
             let displayGbps = fetchStaticDisplayGbps() // Already calculated in HardwareManager
 
             await MainActor.run {
-                if isFirstTick {
+                let now = Date()
+                let elapsed = now.timeIntervalSince(lastPollDate)
+
+                // Guard against a near-zero interval (e.g. two ticks landing back-to-back)
+                // producing a divide-by-near-zero spike in the rate.
+                if isFirstTick || elapsed < 0.05 {
                     isFirstTick = false
                 } else {
                     var newLiveByBSDName: [String: Double] = [:]
                     var diskGbps = 0.0
                     for (device, cumulativeMB) in diskMBByDevice {
                         let deltaMB = max(0, cumulativeMB - (lastDiskMBByDevice[device] ?? cumulativeMB))
-                        let gbps = (deltaMB * 8) / 1000.0
+                        let gbps = (deltaMB * 8) / 1000.0 / elapsed
                         newLiveByBSDName[device] = gbps
                         diskGbps += gbps
                     }
                     var netGbps = 0.0
                     for (iface, cumulativeBytes) in netBytesByInterface {
                         let deltaBytes = max(0, cumulativeBytes - (lastNetBytesByInterface[iface] ?? cumulativeBytes))
-                        let gbps = (deltaBytes * 8) / 1_000_000_000.0
+                        let gbps = (deltaBytes * 8) / 1_000_000_000.0 / elapsed
                         newLiveByBSDName[iface] = gbps
                         netGbps += gbps
                     }
@@ -144,7 +151,7 @@ class LiveAnalytics: ObservableObject {
                     let newTotal = diskGbps + netGbps + displayGbps
 
                     totalTrafficGbps.append(newTotal)
-                    if totalTrafficGbps.count > 60 {
+                    if totalTrafficGbps.count > 120 {
                         totalTrafficGbps.removeFirst()
                     }
 
@@ -155,6 +162,7 @@ class LiveAnalytics: ObservableObject {
 
                 lastDiskMBByDevice = diskMBByDevice
                 lastNetBytesByInterface = netBytesByInterface
+                lastPollDate = now
             }
         }
     }
