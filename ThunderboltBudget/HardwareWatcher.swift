@@ -90,7 +90,7 @@ class LiveAnalytics: ObservableObject {
     // Distinct from the static per-port "budget" bars: this is measured, not negotiated link capacity.
     @Published var liveGbpsByBSDName: [String: Double] = [:]
 
-    private var timer: Timer?
+    private var pollLoopTask: Task<Void, Never>?
 
     // Track previous cumulative totals per device to calculate deltas
     private var lastDiskMBByDevice: [String: Double] = [:]
@@ -99,71 +99,80 @@ class LiveAnalytics: ObservableObject {
 
     // We only begin calculating differences after the first tick finishes storing state
     private var isFirstTick = true
-    
+
     func start() {
-        if timer != nil { return }
-        
+        if pollLoopTask != nil { return }
+
         // Request Notification Permissions
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
             if granted { print("Notifications authorized") }
         }
-        
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            self?.pollMetrics()
+
+        // A self-rescheduling loop (rather than a repeating Timer) guarantees each poll fully
+        // finishes — including both shell calls — before the next one starts. A plain repeating
+        // Timer would fire every 0.5s regardless of whether the prior poll's subprocesses had
+        // returned yet, letting polls overlap and race on lastDiskMBByDevice/lastPollDate, which
+        // is what was producing bogus near-zero throughput readings.
+        pollLoopTask = Task { [weak self] in
+            while let self, !Task.isCancelled {
+                await self.pollMetrics()
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
         }
-        // Force immediate first tick
-        pollMetrics()
     }
-    
-    private func pollMetrics() {
-        Task {
-            let trackedDisks = await MainActor.run { HardwareManager.shared.gatherTrackedDiskBSDNames() }
-            let diskMBByDevice = await fetchExternalDiskCumulativeMB(tracking: trackedDisks)
-            let netBytesByInterface = await fetchExternalNetworkCumulativeBytes()
-            let displayGbps = fetchStaticDisplayGbps() // Already calculated in HardwareManager
 
-            await MainActor.run {
-                let now = Date()
-                let elapsed = now.timeIntervalSince(lastPollDate)
+    private func pollMetrics() async {
+        let trackedDisks = await MainActor.run { HardwareManager.shared.gatherTrackedDiskBSDNames() }
+        // Run both shell calls concurrently instead of back-to-back, halving the wall-clock
+        // cost of each poll so it reliably completes within the 0.5s cadence.
+        async let diskMBByDevice = fetchExternalDiskCumulativeMB(tracking: trackedDisks)
+        async let netBytesByInterface = fetchExternalNetworkCumulativeBytes()
+        let (diskResult, netResult) = await (diskMBByDevice, netBytesByInterface)
+        let displayGbps = await MainActor.run { fetchStaticDisplayGbps() } // Already calculated in HardwareManager
 
-                // Guard against a near-zero interval (e.g. two ticks landing back-to-back)
-                // producing a divide-by-near-zero spike in the rate.
-                if isFirstTick || elapsed < 0.05 {
-                    isFirstTick = false
-                } else {
-                    var newLiveByBSDName: [String: Double] = [:]
-                    var diskGbps = 0.0
-                    for (device, cumulativeMB) in diskMBByDevice {
-                        let deltaMB = max(0, cumulativeMB - (lastDiskMBByDevice[device] ?? cumulativeMB))
-                        let gbps = (deltaMB * 8) / 1000.0 / elapsed
-                        newLiveByBSDName[device] = gbps
-                        diskGbps += gbps
-                    }
-                    var netGbps = 0.0
-                    for (iface, cumulativeBytes) in netBytesByInterface {
-                        let deltaBytes = max(0, cumulativeBytes - (lastNetBytesByInterface[iface] ?? cumulativeBytes))
-                        let gbps = (deltaBytes * 8) / 1_000_000_000.0 / elapsed
-                        newLiveByBSDName[iface] = gbps
-                        netGbps += gbps
-                    }
-                    liveGbpsByBSDName = newLiveByBSDName
+        await MainActor.run {
+            let diskMBByDevice = diskResult
+            let netBytesByInterface = netResult
+            let now = Date()
+            let elapsed = now.timeIntervalSince(lastPollDate)
 
-                    let newTotal = diskGbps + netGbps + displayGbps
+            // Guard against a near-zero interval (e.g. two ticks landing back-to-back)
+            // producing a divide-by-near-zero spike in the rate.
+            if isFirstTick || elapsed < 0.05 {
+                isFirstTick = false
+            } else {
+                var newLiveByBSDName: [String: Double] = [:]
+                var diskGbps = 0.0
+                for (device, cumulativeMB) in diskMBByDevice {
+                    let deltaMB = max(0, cumulativeMB - (lastDiskMBByDevice[device] ?? cumulativeMB))
+                    let gbps = (deltaMB * 8) / 1000.0 / elapsed
+                    newLiveByBSDName[device] = gbps
+                    diskGbps += gbps
+                }
+                var netGbps = 0.0
+                for (iface, cumulativeBytes) in netBytesByInterface {
+                    let deltaBytes = max(0, cumulativeBytes - (lastNetBytesByInterface[iface] ?? cumulativeBytes))
+                    let gbps = (deltaBytes * 8) / 1_000_000_000.0 / elapsed
+                    newLiveByBSDName[iface] = gbps
+                    netGbps += gbps
+                }
+                liveGbpsByBSDName = newLiveByBSDName
 
-                    totalTrafficGbps.append(newTotal)
-                    if totalTrafficGbps.count > 120 {
-                        totalTrafficGbps.removeFirst()
-                    }
+                let newTotal = diskGbps + netGbps + displayGbps
 
-                    if newTotal >= 36.0 {
-                        self.triggerBottleneckWarning(consumption: newTotal)
-                    }
+                totalTrafficGbps.append(newTotal)
+                if totalTrafficGbps.count > 120 {
+                    totalTrafficGbps.removeFirst()
                 }
 
-                lastDiskMBByDevice = diskMBByDevice
-                lastNetBytesByInterface = netBytesByInterface
-                lastPollDate = now
+                if newTotal >= 36.0 {
+                    self.triggerBottleneckWarning(consumption: newTotal)
+                }
             }
+
+            lastDiskMBByDevice = diskMBByDevice
+            lastNetBytesByInterface = netBytesByInterface
+            lastPollDate = now
         }
     }
     
