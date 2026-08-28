@@ -6,6 +6,7 @@ struct ContentView: View {
     @ObservedObject var manager = HardwareManager.shared
     @ObservedObject var analytics = LiveAnalytics.shared
     @State private var selectedDisplayId: UUID? = nil
+    @AppStorage("appearanceMode") private var appearanceMode: AppearanceMode = .system
 
     var body: some View {
         NavigationStack {
@@ -32,6 +33,14 @@ struct ContentView: View {
                         Label("Copy Markdown", systemImage: "doc.on.clipboard")
                     }
                     .disabled(manager.deviceTrees.isEmpty || manager.isScanning)
+                }
+                ToolbarItem(placement: .automatic) {
+                    Picker("Appearance", selection: $appearanceMode) {
+                        ForEach(AppearanceMode.allCases) { mode in
+                            Label(mode.label, systemImage: mode.icon).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.menu)
                 }
             }
         }
