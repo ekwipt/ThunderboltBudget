@@ -8,40 +8,38 @@ struct ContentView: View {
     @State private var selectedDisplayId: UUID? = nil
 
     var body: some View {
-        NavigationSplitView {
-            sidebarContent
-        } detail: {
-            if let displayId = selectedDisplayId, let selectedNode = findNodeById(displayId, in: manager.deviceTrees) {
-                DeviceDetailPanel(node: selectedNode, onClose: { selectedDisplayId = nil })
-                    .navigationSplitViewColumnWidth(min: 320, ideal: 360, max: 420)
-            } else {
-                ContentUnavailableView(
-                    "Select a Device",
-                    systemImage: "cable.connector",
-                    description: Text("Choose a device from the sidebar to see bandwidth and throughput details.")
-                )
-                .navigationSplitViewColumnWidth(min: 320, ideal: 360, max: 420)
-            }
-        }
-        .navigationTitle("Thunderbolt Bandwidth Budget")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button(action: manager.performScan) {
-                    Label("Refresh", systemImage: "arrow.clockwise")
+        NavigationStack {
+            HStack(spacing: 0) {
+                mainContent
+
+                // Detail Panel — fixed width, not user-resizable, so it can never collapse
+                // the main content (NavigationSplitView's sidebar drag-to-collapse did exactly that).
+                if let displayId = selectedDisplayId, let selectedNode = findNodeById(displayId, in: manager.deviceTrees) {
+                    Divider()
+                    DeviceDetailPanel(node: selectedNode, onClose: { selectedDisplayId = nil })
+                        .frame(minWidth: 320, maxWidth: 400)
                 }
             }
-            ToolbarItem(placement: .automatic) {
-                Button(action: manager.copyMarkdownAction) {
-                    Label("Copy Markdown", systemImage: "doc.on.clipboard")
+            .navigationTitle("Thunderbolt Bandwidth Budget")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button(action: manager.performScan) {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                    }
                 }
-                .disabled(manager.deviceTrees.isEmpty || manager.isScanning)
+                ToolbarItem(placement: .automatic) {
+                    Button(action: manager.copyMarkdownAction) {
+                        Label("Copy Markdown", systemImage: "doc.on.clipboard")
+                    }
+                    .disabled(manager.deviceTrees.isEmpty || manager.isScanning)
+                }
             }
         }
         .frame(minWidth: 900, minHeight: 850)
     }
 
     @ViewBuilder
-    private var sidebarContent: some View {
+    private var mainContent: some View {
         VStack(spacing: 0) {
             // Total System Header
             if !manager.deviceTrees.isEmpty, !manager.isScanning {
