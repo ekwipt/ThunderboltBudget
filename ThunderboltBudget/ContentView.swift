@@ -91,7 +91,6 @@ struct ContentView: View {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
-                .background(.regularMaterial)
             }
         }
     }
