@@ -89,7 +89,9 @@ struct ContentView: View {
                         DeviceNodeView(node: node, expandedNodes: $manager.expandedNodes, selectedDisplayId: $selectedDisplayId)
                     }
                 }
-                .listStyle(.sidebar)
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(.regularMaterial)
             }
         }
     }
