@@ -8,80 +8,83 @@ struct ContentView: View {
     @State private var selectedDisplayId: UUID? = nil
 
     var body: some View {
-        NavigationStack {
-            HStack(spacing: 0) {
-                VStack(spacing: 0) {
-                    // Total System Header
-                    if !manager.deviceTrees.isEmpty, !manager.isScanning {
-                        let total = manager.gatherSystemTotal()
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Total System Framework")
-                                    .font(.headline)
-                                    .foregroundColor(.secondary)
-                                Text(String(format: "%.1f Gbps", total))
-                                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                            }
-                            Spacer()
-                        }
-                        .padding()
-                        .background(Color(NSColor.controlBackgroundColor))
-
-                        Divider()
-
-                        LiveTrafficChart(analytics: analytics)
-
-                        Divider()
-                    }
-
-                    // The Main Interactive Content Window
-                    if manager.deviceTrees.isEmpty || manager.isScanning {
-                        VStack(spacing: 12) {
-                            if manager.isScanning {
-                                ProgressView("Scanning Thunderbolt Bus...")
-                            } else {
-                                Text("No hardware detected.")
-                                    .font(.system(.caption, design: .monospaced))
-                            }
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                        .background(Color.black.opacity(0.05))
-                        .padding()
-                    } else {
-                        List {
-                            ForEach(manager.deviceTrees) { node in
-                                DeviceNodeView(node: node, expandedNodes: $manager.expandedNodes, selectedDisplayId: $selectedDisplayId)
-                            }
-                        }
-                        .background(Color.black.opacity(0.05))
-                        .padding()
-                    }
-                }
-
-                // Detail Panel
-                if let displayId = selectedDisplayId, let selectedNode = findNodeById(displayId, in: manager.deviceTrees) {
-                    Divider()
-                    DeviceDetailPanel(node: selectedNode, onClose: { selectedDisplayId = nil })
-                        .frame(minWidth: 320, maxWidth: 400)
-                        .background(Color(NSColor.controlBackgroundColor))
+        NavigationSplitView {
+            sidebarContent
+        } detail: {
+            if let displayId = selectedDisplayId, let selectedNode = findNodeById(displayId, in: manager.deviceTrees) {
+                DeviceDetailPanel(node: selectedNode, onClose: { selectedDisplayId = nil })
+                    .navigationSplitViewColumnWidth(min: 320, ideal: 360, max: 420)
+            } else {
+                ContentUnavailableView(
+                    "Select a Device",
+                    systemImage: "cable.connector",
+                    description: Text("Choose a device from the sidebar to see bandwidth and throughput details.")
+                )
+                .navigationSplitViewColumnWidth(min: 320, ideal: 360, max: 420)
+            }
+        }
+        .navigationTitle("Thunderbolt Bandwidth Budget")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: manager.performScan) {
+                    Label("Refresh", systemImage: "arrow.clockwise")
                 }
             }
-            .navigationTitle("Thunderbolt Bandwidth Budget")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button(action: manager.performScan) {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
+            ToolbarItem(placement: .automatic) {
+                Button(action: manager.copyMarkdownAction) {
+                    Label("Copy Markdown", systemImage: "doc.on.clipboard")
                 }
-                ToolbarItem(placement: .automatic) {
-                    Button(action: manager.copyMarkdownAction) {
-                        Label("Copy Markdown", systemImage: "doc.on.clipboard")
-                    }
-                    .disabled(manager.deviceTrees.isEmpty || manager.isScanning)
-                }
+                .disabled(manager.deviceTrees.isEmpty || manager.isScanning)
             }
         }
         .frame(minWidth: 900, minHeight: 850)
+    }
+
+    @ViewBuilder
+    private var sidebarContent: some View {
+        VStack(spacing: 0) {
+            // Total System Header
+            if !manager.deviceTrees.isEmpty, !manager.isScanning {
+                let total = manager.gatherSystemTotal()
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Total System Framework")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                        Text(String(format: "%.1f Gbps", total))
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                    }
+                    Spacer()
+                }
+                .padding()
+
+                Divider()
+
+                LiveTrafficChart(analytics: analytics)
+
+                Divider()
+            }
+
+            // The Main Interactive Content Window
+            if manager.deviceTrees.isEmpty || manager.isScanning {
+                VStack(spacing: 12) {
+                    if manager.isScanning {
+                        ProgressView("Scanning Thunderbolt Bus...")
+                    } else {
+                        Text("No hardware detected.")
+                            .font(.system(.caption, design: .monospaced))
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            } else {
+                List {
+                    ForEach(manager.deviceTrees) { node in
+                        DeviceNodeView(node: node, expandedNodes: $manager.expandedNodes, selectedDisplayId: $selectedDisplayId)
+                    }
+                }
+                .listStyle(.sidebar)
+            }
+        }
     }
 
     private func findNodeById(_ id: UUID, in nodes: [DeviceNode]) -> DeviceNode? {
@@ -159,15 +162,10 @@ struct DeviceRow: View {
                 if node.dscActive {
                     Text("DSC")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.purple)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
-                        .background(Color.purple.opacity(0.15))
-                        .foregroundColor(.purple)
-                        .cornerRadius(4)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 4)
-                                .stroke(Color.purple.opacity(0.4), lineWidth: 1)
-                        )
+                        .glassEffect(.regular.tint(.purple), in: .capsule)
                 }
 
                 Spacer()
@@ -179,15 +177,10 @@ struct DeviceRow: View {
                         Text(Self.liveLabel(live))
                             .font(.caption2.bold())
                     }
+                    .foregroundColor(.mint)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 4)
-                    .background(Color.mint.opacity(0.18))
-                    .foregroundColor(.mint)
-                    .cornerRadius(8)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.mint.opacity(0.5), lineWidth: 1)
-                    )
+                    .glassEffect(.regular.tint(.mint), in: .capsule)
                 }
 
                 if let bw = node.bandwidthLabel {
@@ -197,7 +190,7 @@ struct DeviceRow: View {
                         .padding(.vertical, 4)
                         .background(pillColor(for: node))
                         .foregroundColor(.white)
-                        .cornerRadius(8)
+                        .clipShape(Capsule())
                 }
             }
 
@@ -301,8 +294,9 @@ struct DeviceDetailPanel: View {
                 }
             }
             .padding()
-            .background(Color(NSColor.controlBackgroundColor))
-            .border(Color.gray.opacity(0.3), width: 1)
+            .background(.regularMaterial)
+
+            Divider()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
