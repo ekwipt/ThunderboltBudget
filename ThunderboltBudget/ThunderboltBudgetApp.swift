@@ -49,11 +49,13 @@ struct ThunderboltBudgetApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .id(appearanceMode)
                 .preferredColorScheme(appearanceMode.colorScheme)
         }
 
         MenuBarExtra {
             MenuBarView()
+                .id(appearanceMode)
                 .preferredColorScheme(appearanceMode.colorScheme)
         } label: {
             Image(nsImage: NSImage.menuBarIcon)
