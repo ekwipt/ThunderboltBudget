@@ -165,9 +165,7 @@ class LiveAnalytics: ObservableObject {
                     totalTrafficGbps.removeFirst()
                 }
 
-                if newTotal >= 36.0 {
-                    self.triggerBottleneckWarning(consumption: newTotal)
-                }
+                evaluateBottleneck(consumption: newTotal)
             }
 
             lastDiskMBByDevice = diskMBByDevice
@@ -175,23 +173,46 @@ class LiveAnalytics: ObservableObject {
             lastPollDate = now
         }
     }
-    
-    private var lastNotificationTime = Date().addingTimeInterval(-60) // Prevent spamming
-    
+
+    private var lastNotificationTime = Date.distantPast
+    // The consumption value we last actually notified about, so we can tell a genuinely new
+    // reading from noise around the same steady-state bottleneck. nil means no active episode.
+    private var lastNotifiedConsumption: Double?
+
+    private static let bottleneckThreshold = 36.0
+    // Must drop meaningfully below the trigger threshold (not just tick under it once) before a
+    // later crossing counts as a fresh episode -- avoids flapping when consumption hovers near 36.
+    private static let bottleneckClearThreshold = 34.0
+    private static let significantChangeGbps = 3.0
+    private static let minNotificationInterval: TimeInterval = 120
+
+    private func evaluateBottleneck(consumption: Double) {
+        if consumption < Self.bottleneckClearThreshold {
+            lastNotifiedConsumption = nil
+            return
+        }
+        guard consumption >= Self.bottleneckThreshold else { return }
+
+        let isNewEpisode = lastNotifiedConsumption == nil
+        let changedSignificantly = lastNotifiedConsumption.map { abs(consumption - $0) >= Self.significantChangeGbps } ?? true
+        guard isNewEpisode || changedSignificantly else { return }
+        guard Date().timeIntervalSince(lastNotificationTime) > Self.minNotificationInterval else { return }
+
+        lastNotificationTime = Date()
+        lastNotifiedConsumption = consumption
+        triggerBottleneckWarning(consumption: consumption)
+    }
+
     private func triggerBottleneckWarning(consumption: Double) {
-        let now = Date()
-        guard now.timeIntervalSince(lastNotificationTime) > 60 else { return } // Cooldown 1 minute
-        lastNotificationTime = now
-        
         let content = UNMutableNotificationContent()
         content.title = "Bandwidth Bottleneck Detected"
         content.body = String(format: "Your Thunderbolt bus is currently pushing %.1f Gbps. Consider moving a high-bandwidth device to a separate physical port cluster on your Mac for optimal performance.", consumption)
         content.sound = .default
-        
+
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
     }
-    
+
     private func fetchExternalDiskCumulativeMB(tracking trackedDisks: [String]) async -> [String: Double] {
         // Without explicit disk names, iostat -I only reports its busiest few disks by default —
         // an idle-looking external drive can get silently crowded out (e.g. by noisy Simulator
