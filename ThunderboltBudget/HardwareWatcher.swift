@@ -179,19 +179,23 @@ class LiveAnalytics: ObservableObject {
     // reading from noise around the same steady-state bottleneck. nil means no active episode.
     private var lastNotifiedConsumption: Double?
 
-    private static let bottleneckThreshold = 36.0
+    // User-configurable via Settings; 36 Gbps matches this system's negotiated Thunderbolt link cap.
+    private var bottleneckThreshold: Double {
+        let stored = UserDefaults.standard.double(forKey: "bottleneckThresholdGbps")
+        return stored > 0 ? stored : 36.0
+    }
     // Must drop meaningfully below the trigger threshold (not just tick under it once) before a
-    // later crossing counts as a fresh episode -- avoids flapping when consumption hovers near 36.
-    private static let bottleneckClearThreshold = 34.0
+    // later crossing counts as a fresh episode -- avoids flapping when consumption hovers near the line.
+    private var bottleneckClearThreshold: Double { bottleneckThreshold - 2.0 }
     private static let significantChangeGbps = 3.0
     private static let minNotificationInterval: TimeInterval = 120
 
     private func evaluateBottleneck(consumption: Double) {
-        if consumption < Self.bottleneckClearThreshold {
+        if consumption < bottleneckClearThreshold {
             lastNotifiedConsumption = nil
             return
         }
-        guard consumption >= Self.bottleneckThreshold else { return }
+        guard consumption >= bottleneckThreshold else { return }
 
         let isNewEpisode = lastNotifiedConsumption == nil
         let changedSignificantly = lastNotifiedConsumption.map { abs(consumption - $0) >= Self.significantChangeGbps } ?? true

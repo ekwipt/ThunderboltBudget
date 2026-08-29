@@ -7,6 +7,7 @@ struct ContentView: View {
     @ObservedObject var analytics = LiveAnalytics.shared
     @State private var selectedDisplayId: UUID? = nil
     @AppStorage("appearanceMode") private var appearanceMode: AppearanceMode = .system
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         NavigationStack {
@@ -41,6 +42,11 @@ struct ContentView: View {
                         }
                     }
                     .pickerStyle(.menu)
+                }
+                ToolbarItem(placement: .automatic) {
+                    Button(action: { openSettings() }) {
+                        Label("Settings", systemImage: "gearshape")
+                    }
                 }
             }
         }

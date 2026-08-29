@@ -99,5 +99,12 @@ struct ThunderboltBudgetApp: App {
             Image(nsImage: NSImage.menuBarIcon)
         }
         .menuBarExtraStyle(.window)
+
+        // Contributes the standard "Settings…" (⌘,) item under the app menu's About section.
+        Settings {
+            SettingsView()
+                .id(effectiveColorScheme)
+                .preferredColorScheme(effectiveColorScheme)
+        }
     }
 }
