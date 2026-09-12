@@ -487,7 +487,7 @@ struct HardwareScanner {
                     panelType: ioDetails?.panelType
                 )
             } else if let speed = node.receptacle_upstream_ambiguous_tag?.current_speed_key ?? node.receptacle_1_tag?.current_speed_key {
-                bwLabel = speed.contains("Up to") ? nil : speed
+                bwLabel = speed.replacingOccurrences(of: "Up to ", with: "")
             }
 
             // Build peripheral details for non-display nodes
