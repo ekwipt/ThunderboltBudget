@@ -8,6 +8,7 @@
 
 /* Begin PBXFileReference section */
 		8C6028622F6AA96200AAA378 /* ThunderboltBudget.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ThunderboltBudget.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8CF7A354309C97E7007CE4BC /* ThunderboltBudgetTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ThunderboltBudgetTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -16,10 +17,22 @@
 			path = ThunderboltBudget;
 			sourceTree = "<group>";
 		};
+		8CF7A355309C97E7007CE4BC /* ThunderboltBudgetTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ThunderboltBudgetTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		8C60285F2F6AA96200AAA378 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8CF7A351309C97E7007CE4BC /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -33,6 +46,7 @@
 			isa = PBXGroup;
 			children = (
 				8C6028642F6AA96200AAA378 /* ThunderboltBudget */,
+				8CF7A355309C97E7007CE4BC /* ThunderboltBudgetTests */,
 				8C6028632F6AA96200AAA378 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,6 +55,7 @@
 			isa = PBXGroup;
 			children = (
 				8C6028622F6AA96200AAA378 /* ThunderboltBudget.app */,
+				8CF7A354309C97E7007CE4BC /* ThunderboltBudgetTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -70,6 +85,28 @@
 			productReference = 8C6028622F6AA96200AAA378 /* ThunderboltBudget.app */;
 			productType = "com.apple.product-type.application";
 		};
+		8CF7A353309C97E7007CE4BC /* ThunderboltBudgetTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8CF7A35A309C97E7007CE4BC /* Build configuration list for PBXNativeTarget "ThunderboltBudgetTests" */;
+			buildPhases = (
+				8CF7A350309C97E7007CE4BC /* Sources */,
+				8CF7A351309C97E7007CE4BC /* Frameworks */,
+				8CF7A352309C97E7007CE4BC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				8CF7A355309C97E7007CE4BC /* ThunderboltBudgetTests */,
+			);
+			name = ThunderboltBudgetTests;
+			packageProductDependencies = (
+			);
+			productName = ThunderboltBudgetTests;
+			productReference = 8CF7A354309C97E7007CE4BC /* ThunderboltBudgetTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -77,11 +114,14 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2630;
+				LastSwiftUpdateCheck = 2720;
 				LastUpgradeCheck = 2630;
 				TargetAttributes = {
 					8C6028612F6AA96200AAA378 = {
 						CreatedOnToolsVersion = 26.3;
+					};
+					8CF7A353309C97E7007CE4BC = {
+						CreatedOnToolsVersion = 27.2;
 					};
 				};
 			};
@@ -100,12 +140,20 @@
 			projectRoot = "";
 			targets = (
 				8C6028612F6AA96200AAA378 /* ThunderboltBudget */,
+				8CF7A353309C97E7007CE4BC /* ThunderboltBudgetTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		8C6028602F6AA96200AAA378 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8CF7A352309C97E7007CE4BC /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -122,6 +170,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		8CF7A350309C97E7007CE4BC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
@@ -129,6 +184,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
@@ -193,6 +249,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
@@ -327,6 +384,46 @@
 			};
 			name = Release;
 		};
+		8CF7A358309C97E7007CE4BC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = spacelightsound.ThunderboltBudgetTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ThunderboltBudget.app/Contents/MacOS/ThunderboltBudget";
+			};
+			name = Debug;
+		};
+		8CF7A359309C97E7007CE4BC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = spacelightsound.ThunderboltBudgetTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ThunderboltBudget.app/Contents/MacOS/ThunderboltBudget";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -344,6 +441,15 @@
 			buildConfigurations = (
 				8C60286E2F6AA96400AAA378 /* Debug */,
 				8C60286F2F6AA96400AAA378 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		8CF7A35A309C97E7007CE4BC /* Build configuration list for PBXNativeTarget "ThunderboltBudgetTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8CF7A358309C97E7007CE4BC /* Debug */,
+				8CF7A359309C97E7007CE4BC /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -1,25 +1,46 @@
 # Thunderbolt Budget ⚡️
 
-A professional macOS utility for Digital Imaging Technicians (DITs), Video Editors, and Power Users to explicitly map and monitor their raw Thunderbolt & USB4 bandwidth consumption in real-time. 
+A macOS utility for DITs, video editors and power users that maps and monitors Thunderbolt / USB4
+bandwidth in real time: which devices hang off which physical port, how much of each port's 40 Gbps
+they are using, and when a port is about to bottleneck.
 
-Built natively and strictly optimized for the **Apple Silicon** architecture.
+**Requires an Apple silicon Mac** (M1 or later). Intel Macs are not supported.
 
 ## Why this exists
-Macs have a hard maximum data throughput of **40 Gbps** per Thunderbolt controller group. When cascading intensive data hardware—like multiple NVMe RAID arrays, 10Gb Ethernet adapters, and 4K/8K displays—it is incredibly easy to silently bottleneck the bus, causing dropped frames on set or crippled offload speeds. 
-
-Thunderbolt Budget hooks directly into the core macOS `IOKit` hardware registry, identifies exactly where devices are physically plugged into the Mac's chassis, and charts the raw mathematical bandwidth usage to ensure your hardware topology is totally optimized.
+Each Thunderbolt controller on a Mac has a hard limit of **40 Gbps**. When cascading NVMe RAID arrays,
+10 GbE adapters and 4K/5K displays it is easy to silently saturate a port, causing dropped frames
+or slow offloads. Thunderbolt Budget shows where each device is plugged in and charts live usage.
 
 ## Features
-- **Pure Apple Silicon Engine:** Hard-coded `usb-drd` kernel bindings for native M1/M2/M3/M4 unified memory read speed.
-- **Physical Chassis Mapping:** Built-in dictionaries use your Mac's `sysctl` model to dictate whether a hub is explicitly plugged into the **"Left Back Port"** or the **"Right Port"** of your specific chassis.
-- **Live Swift Charts Analytics:** Background daemon streams real-time `iostat` (Storage) and `netstat` (Ethernet) throughput deltas directly against mathematically calculated DP (DisplayPort) overhead into a fluid visual histogram.
-- **Smart Bottleneck Notifications:** Native `UNUserNotificationCenter` integration automatically fires a local macOS push warning if a hot-plugged device pushes the active controller dangerously close to the 36 Gbps warning threshold.
-- **Menu Bar Daemon:** A sleek menu bar overlay provides an instant visual readout of your active consumption without congesting your primary screens.
+- **Physical port mapping** — shows which devices are attached to which Thunderbolt port (named by
+  chassis position on supported models, otherwise "Thunderbolt Port N").
+- **Live throughput** — measured disk and network traffic per device, plus a 60 s chart of the bus
+  total (display bandwidth is estimated from resolution and refresh rate).
+- **Bottleneck alerts** — a local notification when total throughput crosses a threshold you set.
+- **Menu bar view** — per-port live rates and a throughput sparkline without opening the window.
+- **Settings** — alert threshold, alerts on/off, refresh rate, launch at login.
 
-## Installation
-1. Clone this repository.
-2. Open `ThunderboltBudget.xcodeproj` in Xcode 15+.
-3. Select your local Mac as the active deployment target.
-4. Hit **Cmd + R** to run, or go to **Product > Archive** to package it into a distributable application.
+## How it works
+Everything is read natively and read-only, with no subprocesses, so it runs inside the App Sandbox:
 
-*Built for absolute throughput precision on macOS Sonoma and later.*
+| Data | Source |
+|---|---|
+| Thunderbolt switches, ports, link speeds | IOKit registry (`IOThunderbolt*`) |
+| USB devices, BSD names, display EDID | IOKit registry walk |
+| Display resolution / refresh | CoreGraphics |
+| Disk throughput | IOKit `IOBlockStorageDriver` statistics |
+| Network throughput | `sysctl` interface counters |
+
+A full hardware scan takes well under a second.
+
+## Known limitations
+- Chassis port names ("Left Back Port", …) are only defined for some Mac models; others show
+  "Thunderbolt Port N".
+- Network byte counters are exposed by macOS as 32-bit values, so rates are computed from deltas
+  with wrap handling (accurate up to roughly 17 Gbps per interface at a 2 s refresh).
+- Thunderbolt firmware version strings are not shown.
+
+## Building
+1. Open `ThunderboltBudget.xcodeproj` in a current Xcode.
+2. Select **My Mac** (Apple silicon) and press **⌘R**, or **Product ▸ Archive** to distribute.
+3. Tests: **⌘U** (Swift Testing).

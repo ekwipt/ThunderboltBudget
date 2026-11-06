@@ -1,45 +1,62 @@
 import Foundation
 
-struct HardwareScanner {
+nonisolated struct HardwareScanner {
     
-    // Scans exactly the same data trees, but as JSON, and decodes them into robust generic tree nodes
-    func scanForDevices() -> [DeviceNode] {
-        let rawData = fetchRegistryDump()
-        return parseJSONOutput(rawData)
+    /// Holds results written by concurrent workers. Each worker writes a distinct property
+    /// and the owner only reads after the DispatchGroup has been waited on.
+    private final class Gathered: @unchecked Sendable {
+        var displayMappings: [String: [Accessory]] = [:]
+        var dscDisplayNames: Set<String> = []
+        var displayDetailsMap: [String: DisplayDetails] = [:]
+        var usbDetails: [String: PeripheralDetails] = [:]
+        var bsdMappings = RegistryHelpers.BSDMappingResult()
+
     }
 
-    // Fetches native JSON output from the hardware profiler
-    func fetchRegistryDump() -> Data {
-        let process = Process()
-        let pipe = Pipe()
-        
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/system_profiler")
-        process.arguments = ["-json", "SPThunderboltDataType", "SPUSBDataType", "SPDisplaysDataType"]
-        
-        process.standardOutput = pipe
-        process.standardError = pipe
-        
-        do {
-            try process.run()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            return data
-        } catch {
-            return Data()
+    /// Scans the Thunderbolt and display trees and the USB accessories, entirely natively:
+    /// no `system_profiler` / `ioreg` subprocesses, so it works inside the App Sandbox.
+    ///
+    /// Thunderbolt and displays are read in milliseconds; the one registry walk that provides USB
+    /// accessories, BSD names and display details takes a few hundred milliseconds more. When
+    /// `onPartial` is given it receives a first tree as soon as the quick data is ready.
+    func scanForDevices(onPartial: (@Sendable ([DeviceNode]) -> Void)? = nil) -> [DeviceNode] {
+        let gathered = Gathered()
+        let registryGroup = DispatchGroup()
+        let queue = DispatchQueue.global(qos: .userInitiated)
+
+        queue.async(group: registryGroup) {
+            // One native registry walk replaces five `ioreg -l` runs and their text parsing.
+            let snapshot = NativeRegistryScan.scan()
+            gathered.displayMappings = snapshot.displayMappings
+            gathered.dscDisplayNames = snapshot.dscDisplayNames
+            gathered.displayDetailsMap = snapshot.displayDetails
+            gathered.usbDetails = snapshot.usbDetails
+            gathered.bsdMappings = snapshot.bsdMappings
         }
+
+        var root = SPProfileRoot()
+        let thunderbolt = NativeThunderboltScanner.scan()
+        root.SPThunderboltDataType = thunderbolt.isEmpty ? nil : thunderbolt
+        let displays = NativeDisplayScanner.scan()
+        root.SPDisplaysDataType = displays.isEmpty ? nil : displays
+
+        // Stage 0: trees without the registry-derived enrichment.
+        if let onPartial {
+            onPartial(parseJSONOutput(root, gathered: Gathered()))
+        }
+
+        // Stage 1: fully enriched.
+        registryGroup.wait()
+        return parseJSONOutput(root, gathered: gathered)
     }
 
-    private func parseJSONOutput(_ data: Data) -> [DeviceNode] {
-        guard let root = try? JSONDecoder().decode(SPProfileRoot.self, from: data) else {
-            return []
-        }
-
+    private func parseJSONOutput(_ root: SPProfileRoot, gathered: Gathered) -> [DeviceNode] {
         // 1. Map physical DisplayPort streams and display details using our custom IOKit scanner
-        let displayMappings = IORegTopologyParser.getDisplayMappings()
-        let dscDisplayNames = IORegTopologyParser.getDSCActiveDisplayNames()
-        let displayDetailsMap = IORegTopologyParser.getDisplayDetails()
-        let usbDetails = IORegTopologyParser.getUSBDeviceDetails()
-        let bsdMappings = IORegTopologyParser.getBSDDeviceMappings()
+        let displayMappings = gathered.displayMappings
+        let dscDisplayNames = gathered.dscDisplayNames
+        let displayDetailsMap = gathered.displayDetailsMap
+        let usbDetails = gathered.usbDetails
+        let bsdMappings = gathered.bsdMappings
 
         // 2. Extract displays
         var allDisplays: [DeviceNode] = []
@@ -105,7 +122,7 @@ struct HardwareScanner {
 
     // Correlates physical devices with the BSD identifiers iostat/netstat report throughput for,
     // so LiveAnalytics can be matched back to a specific device in the tree.
-    private func attachLiveBSDNames(to nodes: [DeviceNode], mappings: IORegTopologyParser.BSDMappingResult) -> [DeviceNode] {
+    private func attachLiveBSDNames(to nodes: [DeviceNode], mappings: RegistryHelpers.BSDMappingResult) -> [DeviceNode] {
         var usedBSDNames = Set<String>()
 
         func withBSDName(_ pd: PeripheralDetails, _ bsdName: String) -> PeripheralDetails {

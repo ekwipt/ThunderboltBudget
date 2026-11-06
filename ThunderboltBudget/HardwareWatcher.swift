@@ -93,8 +93,8 @@ class LiveAnalytics: ObservableObject {
     private var pollLoopTask: Task<Void, Never>?
 
     // Track previous cumulative totals per device to calculate deltas
-    private var lastDiskMBByDevice: [String: Double] = [:]
-    private var lastNetBytesByInterface: [String: Double] = [:]
+    private var lastDiskBytesByDevice: [String: Double] = [:]
+    private var lastNetCountersByInterface: [String: NativeLiveStats.NetCounters] = [:]
     private var lastPollDate: Date = Date()
 
     // We only begin calculating differences after the first tick finishes storing state
@@ -111,12 +111,14 @@ class LiveAnalytics: ObservableObject {
         // A self-rescheduling loop (rather than a repeating Timer) guarantees each poll fully
         // finishes — including both shell calls — before the next one starts. A plain repeating
         // Timer would fire every 0.5s regardless of whether the prior poll's subprocesses had
-        // returned yet, letting polls overlap and race on lastDiskMBByDevice/lastPollDate, which
+        // returned yet, letting polls overlap and race on lastDiskBytesByDevice/lastPollDate, which
         // is what was producing bogus near-zero throughput readings.
         pollLoopTask = Task { [weak self] in
             while let self, !Task.isCancelled {
                 await self.pollMetrics()
-                try? await Task.sleep(nanoseconds: 500_000_000)
+                let interval = UserDefaults.standard.double(forKey: "pollIntervalSeconds")
+                let seconds = interval > 0 ? interval : 0.5
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             }
         }
     }
@@ -125,14 +127,14 @@ class LiveAnalytics: ObservableObject {
         let trackedDisks = await MainActor.run { HardwareManager.shared.gatherTrackedDiskBSDNames() }
         // Run both shell calls concurrently instead of back-to-back, halving the wall-clock
         // cost of each poll so it reliably completes within the 0.5s cadence.
-        async let diskMBByDevice = fetchExternalDiskCumulativeMB(tracking: trackedDisks)
-        async let netBytesByInterface = fetchExternalNetworkCumulativeBytes()
-        let (diskResult, netResult) = await (diskMBByDevice, netBytesByInterface)
+        let (diskResult, netResult) = await Task.detached(priority: .userInitiated) {
+            (Self.readDiskBytes(tracking: trackedDisks), Self.readNetworkCounters())
+        }.value
         let displayGbps = await MainActor.run { fetchStaticDisplayGbps() } // Already calculated in HardwareManager
 
         await MainActor.run {
-            let diskMBByDevice = diskResult
-            let netBytesByInterface = netResult
+            let diskBytesByDevice = diskResult
+            let netCountersByInterface = netResult
             let now = Date()
             let elapsed = now.timeIntervalSince(lastPollDate)
 
@@ -143,15 +145,17 @@ class LiveAnalytics: ObservableObject {
             } else {
                 var newLiveByBSDName: [String: Double] = [:]
                 var diskGbps = 0.0
-                for (device, cumulativeMB) in diskMBByDevice {
-                    let deltaMB = max(0, cumulativeMB - (lastDiskMBByDevice[device] ?? cumulativeMB))
-                    let gbps = (deltaMB * 8) / 1000.0 / elapsed
+                for (device, cumulativeBytes) in diskBytesByDevice {
+                    let deltaBytes = max(0, cumulativeBytes - (lastDiskBytesByDevice[device] ?? cumulativeBytes))
+                    let gbps = (deltaBytes * 8) / 1_000_000_000.0 / elapsed
                     newLiveByBSDName[device] = gbps
                     diskGbps += gbps
                 }
                 var netGbps = 0.0
-                for (iface, cumulativeBytes) in netBytesByInterface {
-                    let deltaBytes = max(0, cumulativeBytes - (lastNetBytesByInterface[iface] ?? cumulativeBytes))
+                for (iface, counters) in netCountersByInterface {
+                    let previous = lastNetCountersByInterface[iface] ?? counters
+                    let deltaBytes = Double(NativeLiveStats.counterDelta(from: previous.inBytes, to: counters.inBytes)
+                                            + NativeLiveStats.counterDelta(from: previous.outBytes, to: counters.outBytes))
                     let gbps = (deltaBytes * 8) / 1_000_000_000.0 / elapsed
                     newLiveByBSDName[iface] = gbps
                     netGbps += gbps
@@ -168,8 +172,8 @@ class LiveAnalytics: ObservableObject {
                 evaluateBottleneck(consumption: newTotal)
             }
 
-            lastDiskMBByDevice = diskMBByDevice
-            lastNetBytesByInterface = netBytesByInterface
+            lastDiskBytesByDevice = diskBytesByDevice
+            lastNetCountersByInterface = netCountersByInterface
             lastPollDate = now
         }
     }
@@ -191,6 +195,8 @@ class LiveAnalytics: ObservableObject {
     private static let minNotificationInterval: TimeInterval = 120
 
     private func evaluateBottleneck(consumption: Double) {
+        // Alerts default to on; only an explicit false in Settings disables them.
+        if UserDefaults.standard.object(forKey: "bottleneckAlertsEnabled") as? Bool == false { return }
         if consumption < bottleneckClearThreshold {
             lastNotifiedConsumption = nil
             return
@@ -217,61 +223,24 @@ class LiveAnalytics: ObservableObject {
         UNUserNotificationCenter.current().add(request)
     }
 
-    private func fetchExternalDiskCumulativeMB(tracking trackedDisks: [String]) async -> [String: Double] {
-        // Without explicit disk names, iostat -I only reports its busiest few disks by default —
-        // an idle-looking external drive can get silently crowded out (e.g. by noisy Simulator
-        // disk images), even mid-transfer. Naming the disks we actually track guarantees they appear.
-        let diskArgs = trackedDisks.filter { $0.hasPrefix("disk") && $0.dropFirst(4).allSatisfy { $0.isNumber } }
-        let command = diskArgs.isEmpty ? "iostat -I" : "iostat -I \(diskArgs.joined(separator: " "))"
-        let output = await runShell(command)
-        var result: [String: Double] = [:]
-
-        let lines = output.components(separatedBy: .newlines)
-        guard lines.count >= 3 else { return result }
-
-        // Find columns dynamically
-        let headers = lines[0].components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-        let stats = lines[2].components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-
-        for (idx, disk) in headers.enumerated() {
-            if disk == "disk0" { continue } // Ignore internal NVMe
-
-            // iostat pairs stats in blocks of 3: KB/t, xfrs, MB
-            let mbIndex = (idx * 3) + 2
-            if mbIndex < stats.count, let val = Double(stats[mbIndex]) {
-                result[disk] = val
-            }
-        }
-        return result
+    /// Cumulative bytes for the physical disks we track (never the internal boot disk).
+    /// Only disks named in `trackedDisks` count, so noisy unrelated volumes (e.g. Simulator
+    /// disk images) can't inflate the Thunderbolt total.
+    nonisolated private static func readDiskBytes(tracking trackedDisks: [String]) -> [String: Double] {
+        let wanted = Set(trackedDisks.filter { $0.hasPrefix("disk") && $0.dropFirst(4).allSatisfy { $0.isNumber } })
+        guard !wanted.isEmpty else { return [:] }
+        return NativeLiveStats.diskCumulativeBytes().filter { wanted.contains($0.key) && $0.key != "disk0" }
     }
 
-    private func fetchExternalNetworkCumulativeBytes() async -> [String: Double] {
-        let output = await runShell("netstat -ib")
-        var result: [String: Double] = [:]
-
-        let lines = output.components(separatedBy: .newlines)
-        for line in lines {
-            let cols = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-            guard cols.count > 10 else { continue }
-
-            let name = cols[0]
-            // We want external physical adapters (usually enX where X is not 0 (Wi-Fi)).
-            // Ignore loopback (lo0), awdl, llw, bridge, utun
-            if name == "en0" || name.hasPrefix("lo") || name.hasPrefix("awdl") || name.hasPrefix("llw") || name.hasPrefix("bridge") || name.hasPrefix("utun") {
-                continue
-            }
-
-            // netstat -ib lists one row per address family (Link#, inet, inet6) for the same
-            // interface; they report the same cumulative counters, so take the max instead of
-            // summing to avoid inflating a single interface's traffic 2-3x.
-            if let ibytes = Double(cols[6]), let obytes = Double(cols[9]) {
-                result[name] = max(result[name] ?? 0, ibytes + obytes)
-            }
+    /// External physical adapters only (usually enX where X is not 0, which is Wi-Fi).
+    /// Ignores loopback, awdl, llw, bridge and utun.
+    nonisolated private static func readNetworkCounters() -> [String: NativeLiveStats.NetCounters] {
+        NativeLiveStats.networkCumulativeBytes().filter { name, _ in
+            !(name == "en0" || name.hasPrefix("lo") || name.hasPrefix("awdl") || name.hasPrefix("llw")
+              || name.hasPrefix("bridge") || name.hasPrefix("utun"))
         }
-
-        return result
     }
-    
+
     @MainActor
     private func fetchStaticDisplayGbps() -> Double {
         // Find displays in the tree and sum their mathematically hardcoded link bandwidth
@@ -295,23 +264,5 @@ class LiveAnalytics: ObservableObject {
             }
         }
         return foundAny ? total : nil
-    }
-
-    private func runShell(_ command: String) async -> String {
-        return await Task.detached {
-            let process = Process()
-            let pipe = Pipe()
-            process.executableURL = URL(fileURLWithPath: "/bin/sh")
-            process.arguments = ["-c", command]
-            process.standardOutput = pipe
-            do {
-                try process.run()
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
-                return String(data: data, encoding: .utf8) ?? ""
-            } catch {
-                return ""
-            }
-        }.value
     }
 }

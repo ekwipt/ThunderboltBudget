@@ -1,0 +1,9 @@
+.idea/
+xcuserdata/
+*.xcuserstate
+build/
+release_build/
+.build_tmp/
+*.profraw
+.claude/
+.DS_Store

@@ -1,12 +1,16 @@
 import Foundation
 
 struct SPProfileRoot: Codable {
+    init() {}
+
     var SPThunderboltDataType: [SPNode]?
     var SPUSBDataType: [SPNode]?
     var SPDisplaysDataType: [SPNode]?
 }
 
 struct SPNode: Codable {
+    init() {}
+    var device_name_key: String?
     var _name: String?
     var _items: [SPNode]?
     var spdisplays_ndrvs: [SPNode]?
@@ -101,24 +105,25 @@ struct ReceptacleTag: Codable {
     var link_status_key: String?
     var micro_version_key: String?
     var receptacle_status_key: String?
+    var receptacle_id_key: String?
 }
 
 struct DisplayDetails: Hashable {
-    let displayUID: String?
-    let vendor: String?
-    let model: String?
-    let connectionType: String?
-    let bitDepth: String?
-    let nativeResolution: String?
-    let isScaled: Bool?
-    let edidSerial: String?
-    let edidMfgDate: String?
-    let dscVersion: String?
-    let dscMode: String?
-    let dscRatio: String?
-    let maxResolution: String?
-    let hdrSupport: String?
-    let panelType: String?
+    var displayUID: String?
+    var vendor: String?
+    var model: String?
+    var connectionType: String?
+    var bitDepth: String?
+    var nativeResolution: String?
+    var isScaled: Bool?
+    var edidSerial: String?
+    var edidMfgDate: String?
+    var dscVersion: String?
+    var dscMode: String?
+    var dscRatio: String?
+    var maxResolution: String?
+    var hdrSupport: String?
+    var panelType: String?
 }
 
 struct TBPortStatus: Hashable {
@@ -178,8 +183,10 @@ struct DeviceNode: Identifiable, Hashable {
     var displayDetails: DisplayDetails?
     var rawBandwidth: Double?  // Uncompressed bandwidth for displays with DSC
     var peripheralDetails: PeripheralDetails?
+    /// True for a stand-in row shown while this section's data is still being gathered.
+    var isPlaceholder: Bool = false
 
-    init(id: UUID = UUID(), name: String, iconName: String = "cube", bandwidthLabel: String? = nil, uid: String? = nil, children: [DeviceNode]? = nil, bandwidthRatio: Double? = nil, dscActive: Bool = false, displayDetails: DisplayDetails? = nil, rawBandwidth: Double? = nil, peripheralDetails: PeripheralDetails? = nil) {
+    init(id: UUID = UUID(), name: String, iconName: String = "cube", bandwidthLabel: String? = nil, uid: String? = nil, children: [DeviceNode]? = nil, bandwidthRatio: Double? = nil, dscActive: Bool = false, displayDetails: DisplayDetails? = nil, rawBandwidth: Double? = nil, peripheralDetails: PeripheralDetails? = nil, isPlaceholder: Bool = false) {
         self.id = id
         self.name = name
         self.iconName = iconName
@@ -191,5 +198,6 @@ struct DeviceNode: Identifiable, Hashable {
         self.displayDetails = displayDetails
         self.rawBandwidth = rawBandwidth
         self.peripheralDetails = peripheralDetails
+        self.isPlaceholder = isPlaceholder
     }
 }

@@ -57,15 +57,24 @@ struct ContentView: View {
     private var mainContent: some View {
         VStack(spacing: 0) {
             // Total System Header
-            if !manager.deviceTrees.isEmpty, !manager.isScanning {
+            if !manager.deviceTrees.isEmpty {
                 let total = manager.gatherSystemTotal()
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Total System Framework")
                             .font(.headline)
                             .foregroundColor(.secondary)
-                        Text(String(format: "%.1f Gbps", total))
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                        if manager.isScanningThunderbolt {
+                            HStack(spacing: 8) {
+                                ProgressView().controlSize(.small)
+                                Text("Reading devices…")
+                                    .font(.system(size: 20, weight: .medium, design: .rounded))
+                                    .foregroundColor(.secondary)
+                            }
+                        } else {
+                            Text(String(format: "%.1f Gbps", total))
+                                .font(.system(size: 28, weight: .bold, design: .rounded))
+                        }
                     }
                     Spacer()
                 }
@@ -79,13 +88,22 @@ struct ContentView: View {
             }
 
             // The Main Interactive Content Window
-            if manager.deviceTrees.isEmpty || manager.isScanning {
+            if manager.deviceTrees.isEmpty {
                 VStack(spacing: 12) {
                     if manager.isScanning {
                         ProgressView("Scanning Thunderbolt Bus...")
                     } else {
-                        Text("No hardware detected.")
-                            .font(.system(.caption, design: .monospaced))
+                        Image(systemName: "bolt.slash")
+                            .font(.system(size: 32))
+                            .foregroundColor(.secondary)
+                        Text("No hardware detected")
+                            .font(.headline)
+                        Text("Thunderbolt Budget reads your Mac's hardware registry (read-only) to find Thunderbolt, USB and display devices. If nothing appears, none were reported by macOS. Nothing is sent off your Mac.")
+                            .font(.callout)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 420)
+                        Button("Scan Again", action: manager.performScan)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -172,6 +190,13 @@ struct DeviceRow: View {
 
                 Text(node.name)
                     .font(.system(.body, design: .rounded))
+
+                if node.isPlaceholder {
+                    ProgressView().controlSize(.small)
+                    Text("scanning…")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
 
                 if node.dscActive {
                     Text("DSC")
