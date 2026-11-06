@@ -124,7 +124,7 @@ struct UIBackgroundWorkers {
         return result
     }
     
-    static func gatherAllDeviceIDs(from nodes: [DeviceNode]) -> Set<UUID> {
+    nonisolated static func gatherAllDeviceIDs(from nodes: [DeviceNode]) -> Set<UUID> {
         var ids = Set<UUID>()
         for node in nodes {
             ids.insert(node.id)

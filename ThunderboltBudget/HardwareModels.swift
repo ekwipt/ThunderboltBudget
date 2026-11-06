@@ -1,6 +1,6 @@
 import Foundation
 
-struct SPProfileRoot: Codable {
+nonisolated struct SPProfileRoot: Codable {
     init() {}
 
     var SPThunderboltDataType: [SPNode]?
@@ -8,7 +8,7 @@ struct SPProfileRoot: Codable {
     var SPDisplaysDataType: [SPNode]?
 }
 
-struct SPNode: Codable {
+nonisolated struct SPNode: Codable {
     init() {}
     var device_name_key: String?
     var _name: String?
@@ -100,7 +100,7 @@ struct SPNode: Codable {
     }
 }
 
-struct ReceptacleTag: Codable {
+nonisolated struct ReceptacleTag: Codable {
     var current_speed_key: String?
     var link_status_key: String?
     var micro_version_key: String?
@@ -108,7 +108,7 @@ struct ReceptacleTag: Codable {
     var receptacle_id_key: String?
 }
 
-struct DisplayDetails: Hashable {
+nonisolated struct DisplayDetails: Hashable {
     var displayUID: String?
     var vendor: String?
     var model: String?
@@ -126,14 +126,14 @@ struct DisplayDetails: Hashable {
     var panelType: String?
 }
 
-struct TBPortStatus: Hashable {
+nonisolated struct TBPortStatus: Hashable {
     let portNumber: Int
     let speed: String
     let isConnected: Bool
     let firmwareVersion: String?
 }
 
-struct PeripheralDetails: Hashable {
+nonisolated struct PeripheralDetails: Hashable {
     // Common
     let vendor: String?
     let uid: String?
@@ -171,7 +171,7 @@ struct PeripheralDetails: Hashable {
     }
 }
 
-struct DeviceNode: Identifiable, Hashable {
+nonisolated struct DeviceNode: Identifiable, Hashable {
     let id: UUID
     let name: String
     let iconName: String

@@ -41,6 +41,16 @@
 		};
 /* End PBXFrameworksBuildPhase section */
 
+/* Begin PBXContainerItemProxy section */
+		A1B2C3D4E5F60718293A4B5D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8C60285A2F6AA96200AAA378 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8C6028612F6AA96200AAA378;
+			remoteInfo = ThunderboltBudget;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXGroup section */
 		8C6028592F6AA96200AAA378 = {
 			isa = PBXGroup;
@@ -96,6 +106,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				A1B2C3D4E5F60718293A4B5C /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				8CF7A355309C97E7007CE4BC /* ThunderboltBudgetTests */,
@@ -178,6 +189,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A1B2C3D4E5F60718293A4B5C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8C6028612F6AA96200AAA378 /* ThunderboltBudget */;
+			targetProxy = A1B2C3D4E5F60718293A4B5D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		8C60286B2F6AA96400AAA378 /* Debug */ = {
