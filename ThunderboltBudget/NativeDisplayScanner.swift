@@ -43,8 +43,11 @@ nonisolated enum NativeDisplayScanner {
             if let mode = CGDisplayCopyDisplayMode(id) {
                 let hz = mode.refreshRate > 0 ? mode.refreshRate : 60
                 node._spdisplays_resolution = String(format: "%d x %d @ %.2fHz", mode.width, mode.height, hz)
-                node.displayPixels = "\(mode.pixelWidth) x \(mode.pixelHeight)"
-                node.spdisplays_pixelresolution = pixelResolutionKey(width: mode.pixelWidth, height: mode.pixelHeight, builtIn: isBuiltIn)
+                // The current mode's pixelWidth/Height is the HiDPI backing store (e.g. 5120 x 2880 for a
+                // 4K panel set to "looks like 2560 x 1440"), not the panel. Report the panel's own size.
+                let panel = nativePanelSize(id, current: mode)
+                node.displayPixels = "\(panel.width) x \(panel.height)"
+                node.spdisplays_pixelresolution = pixelResolutionKey(width: panel.width, height: panel.height, builtIn: isBuiltIn)
             }
             displays.append(node)
         }
@@ -54,6 +57,22 @@ nonisolated enum NativeDisplayScanner {
         gpu._name = "GPU"
         gpu.spdisplays_ndrvs = displays
         return [gpu]
+    }
+
+    /// The panel's physical resolution: the mode macOS flags as native, else the largest 1:1
+    /// (non-HiDPI) mode, else the current mode's backing size.
+    private static func nativePanelSize(_ id: CGDirectDisplayID, current: CGDisplayMode) -> (width: Int, height: Int) {
+        let options = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
+        let modes = (CGDisplayCopyAllDisplayModes(id, options) as? [CGDisplayMode]) ?? []
+        let kDisplayModeNativeFlag: UInt32 = 0x0200_0000 // IOGraphicsTypes.h
+        if let native = modes.first(where: { $0.ioFlags & kDisplayModeNativeFlag != 0 }) {
+            return (native.pixelWidth, native.pixelHeight)
+        }
+        if let largest = modes.filter({ $0.width == $0.pixelWidth })
+            .max(by: { $0.pixelWidth * $0.pixelHeight < $1.pixelWidth * $1.pixelHeight }) {
+            return (largest.pixelWidth, largest.pixelHeight)
+        }
+        return (current.pixelWidth, current.pixelHeight)
     }
 
     // MARK: - Registry EDID attributes

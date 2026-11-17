@@ -458,7 +458,11 @@ nonisolated struct HardwareScanner {
 
                 name = "\(name) (\(cleanRes))"
 
-                if let bw = self.calculateDisplayBandwidth(res, dscActive: isDSC) {
+                // The cable carries the panel's native signal whatever the "looks like" resolution is,
+                // so estimate from the panel's pixels at the current refresh rate.
+                let refresh = res.components(separatedBy: "@").last ?? ""
+                let signal = node.displayPixels.map { "\($0) @\(refresh)" } ?? res
+                if let bw = self.calculateDisplayBandwidth(signal, dscActive: isDSC) {
                     bwLabel = String(format: "%.1f Gbps", bw)
                     if isDSC {
                         rawBw = bw * 3.0  // Store uncompressed value

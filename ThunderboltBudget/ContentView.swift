@@ -469,7 +469,12 @@ struct DisplayInfoSection: View {
                 .font(.caption.bold())
                 .foregroundColor(.secondary)
 
-            DetailRowView(label: "Resolution", value: node.name.extractResolution() ?? "N/A")
+            let looksLike = node.name.extractResolution()
+            // When scaled, the window shows the "looks like" size; the panel's own pixels differ.
+            let isScaled = details.nativeResolution.map { native in
+                looksLike.map { !$0.replacingOccurrences(of: "×", with: "x").hasPrefix(native) } ?? false
+            } ?? false
+            DetailRowView(label: isScaled ? "Looks Like" : "Resolution", value: looksLike ?? "N/A")
             if let native = details.nativeResolution {
                 DetailRowView(label: "Native Pixels", value: native)
             }
