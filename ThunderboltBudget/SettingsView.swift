@@ -7,11 +7,30 @@ struct SettingsView: View {
     @AppStorage("pollIntervalSeconds") private var pollInterval: Double = 0.5
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var launchError: String?
+    @State private var notificationsDenied = false
 
     var body: some View {
         Form {
             Section {
                 Toggle("Bottleneck alerts", isOn: $alertsEnabled)
+                    .onChange(of: alertsEnabled) { _, enabled in
+                        guard enabled else { return }
+                        Task { notificationsDenied = !(await BottleneckNotifications.ensureAuthorized()) }
+                    }
+                if alertsEnabled && notificationsDenied {
+                    HStack {
+                        Text("Notifications are turned off for Thunderbolt Budget.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Button("Open System Settings…") {
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                        .controlSize(.small)
+                    }
+                }
                 Picker("Refresh rate", selection: $pollInterval) {
                     Text("0.5 s").tag(0.5)
                     Text("1 s").tag(1.0)
@@ -52,5 +71,7 @@ struct SettingsView: View {
         .padding(.vertical, 4)
         .frame(width: 380)
         .fixedSize(horizontal: false, vertical: true)
+        // Re-check whenever Settings opens, in case permission changed in System Settings.
+        .task { notificationsDenied = await BottleneckNotifications.isDenied() }
     }
 }

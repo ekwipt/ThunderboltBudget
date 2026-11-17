@@ -81,6 +81,28 @@ class HardwareWatcher {
     }
 }
 
+/// Notification permission is requested only when it's needed -- when the user turns alerts on,
+/// or the first time an alert fires (alerts default to on) -- never at launch.
+enum BottleneckNotifications {
+    /// Asks for permission if it hasn't been asked yet. Returns whether alerts can be delivered.
+    static func ensureAuthorized() async -> Bool {
+        let center = UNUserNotificationCenter.current()
+        switch await center.notificationSettings().authorizationStatus {
+        case .notDetermined:
+            return (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
+        case .authorized, .provisional:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// True if the user has explicitly turned notifications off for this app.
+    static func isDenied() async -> Bool {
+        await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .denied
+    }
+}
+
 class LiveAnalytics: ObservableObject {
     static let shared = LiveAnalytics()
     
@@ -102,11 +124,6 @@ class LiveAnalytics: ObservableObject {
 
     func start() {
         if pollLoopTask != nil { return }
-
-        // Request Notification Permissions
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
-            if granted { print("Notifications authorized") }
-        }
 
         // A self-rescheduling loop (rather than a repeating Timer) guarantees each poll fully
         // finishes before the next one starts, so polls can't overlap and race on
@@ -222,14 +239,18 @@ class LiveAnalytics: ObservableObject {
     }
 
     private func triggerBottleneckWarning(portName: String, consumption: Double, capacity: Double) {
-        let content = UNMutableNotificationContent()
-        content.title = "Bandwidth Bottleneck on \(portName)"
-        content.body = String(format: "This port is pushing %.1f of %.0f Gbps. Consider moving a high-bandwidth device to a different Thunderbolt port.", consumption, capacity)
-        content.sound = .default
+        Task {
+            guard await BottleneckNotifications.ensureAuthorized() else { return }
 
-        // One identifier per port, so a newer alert replaces the older one for the same port.
-        let request = UNNotificationRequest(identifier: "bottleneck-\(portName)", content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request)
+            let content = UNMutableNotificationContent()
+            content.title = "Bandwidth Bottleneck on \(portName)"
+            content.body = String(format: "This port is pushing %.1f of %.0f Gbps. Consider moving a high-bandwidth device to a different Thunderbolt port.", consumption, capacity)
+            content.sound = .default
+
+            // One identifier per port, so a newer alert replaces the older one for the same port.
+            let request = UNNotificationRequest(identifier: "bottleneck-\(portName)", content: content, trigger: nil)
+            try? await UNUserNotificationCenter.current().add(request)
+        }
     }
 
     /// Cumulative bytes for the physical disks we track (never the internal boot disk).
