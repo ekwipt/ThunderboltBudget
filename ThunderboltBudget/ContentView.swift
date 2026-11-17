@@ -56,14 +56,16 @@ struct ContentView: View {
     @ViewBuilder
     private var mainContent: some View {
         VStack(spacing: 0) {
-            // Total System Header
+            // Allocated header: sum of negotiated link capacity across ports, not live traffic
+            // (live usage is the chart below).
             if !manager.deviceTrees.isEmpty {
                 let total = manager.gatherSystemTotal()
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Total System Framework")
+                        Text("Allocated")
                             .font(.headline)
                             .foregroundColor(.secondary)
+                            .help("Combined link bandwidth negotiated by connected devices. Live usage is shown in the chart below.")
                         if manager.isScanningThunderbolt {
                             HStack(spacing: 8) {
                                 ProgressView().controlSize(.small)
