@@ -159,7 +159,7 @@ nonisolated struct PeripheralDetails: Hashable {
     let tbDomainUUID: String?
     let tbDownstreamPorts: [TBPortStatus]?
 
-    // BSD identifier (e.g. "disk4", "en5") used to correlate this device with live iostat/netstat throughput
+    // BSD identifier (e.g. "disk4", "en5") used to correlate this device with its live disk/network throughput counters
     let bsdName: String?
 
     var hasAnyDetail: Bool {

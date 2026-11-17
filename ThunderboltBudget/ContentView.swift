@@ -178,7 +178,7 @@ struct DeviceRow: View {
         return selectedDisplayId == node.id
     }
 
-    // Real, currently-measured throughput (from iostat/netstat), as opposed to bandwidthLabel's
+    // Real, currently-measured throughput (native disk/network counters), as opposed to bandwidthLabel's
     // static negotiated-link "budget" figure. nil when this node has no storage/network descendant.
     var liveGbps: Double? {
         liveAnalytics.liveGbps(for: node)

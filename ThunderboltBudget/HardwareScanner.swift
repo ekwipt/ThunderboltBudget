@@ -120,7 +120,7 @@ nonisolated struct HardwareScanner {
         return attachLiveBSDNames(to: enriched, mappings: bsdMappings)
     }
 
-    // Correlates physical devices with the BSD identifiers iostat/netstat report throughput for,
+    // Correlates physical devices with the BSD identifiers that live disk/network throughput is reported under,
     // so LiveAnalytics can be matched back to a specific device in the tree.
     private func attachLiveBSDNames(to nodes: [DeviceNode], mappings: RegistryHelpers.BSDMappingResult) -> [DeviceNode] {
         var usedBSDNames = Set<String>()

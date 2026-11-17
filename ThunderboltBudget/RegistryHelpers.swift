@@ -15,7 +15,7 @@ nonisolated struct PortMapping {
 nonisolated enum RegistryHelpers {
 
     /// Result of scanning IORegistry for BSD device identifiers (e.g. "disk4", "en5"),
-    /// used to correlate physical devices with live iostat/netstat throughput.
+    /// used to correlate physical devices with their live disk/network throughput counters.
     struct BSDMappingResult {
         /// bsdName → ordered candidate ancestor names, innermost (closest to the actual device,
         /// e.g. "USB 10/100/1000 LAN") first, outermost (e.g. a parent hub chip it's plugged

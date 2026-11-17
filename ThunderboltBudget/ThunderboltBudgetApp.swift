@@ -6,7 +6,7 @@ extension NSImage {
     // Generate a raw vector image that ignores SwiftUI's strict MenuBar constraints
     static var menuBarIcon: NSImage {
         let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .bold)
-        let image = NSImage(systemSymbolName: "bolt.horizontal.circle", accessibilityDescription: nil)!
+        let image = NSImage(systemSymbolName: "bolt.horizontal.circle", accessibilityDescription: "Thunderbolt Budget")!
         let scaledImage = image.withSymbolConfiguration(config) ?? image
         scaledImage.isTemplate = true
         return scaledImage
