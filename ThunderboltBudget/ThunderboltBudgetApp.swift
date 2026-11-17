@@ -77,6 +77,8 @@ final class SystemAppearanceObserver: ObservableObject {
 
 @main
 struct ThunderboltBudgetApp: App {
+    static let mainWindowID = "main"
+
     @AppStorage("appearanceMode") private var appearanceMode: AppearanceMode = .system
     @StateObject private var systemAppearance = SystemAppearanceObserver()
 
@@ -85,7 +87,9 @@ struct ThunderboltBudgetApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        // A single-instance Window (not WindowGroup) so "Open Thunderbolt Budget" in the menu bar
+        // brings the existing window forward instead of opening a duplicate.
+        Window("Thunderbolt Budget", id: Self.mainWindowID) {
             ContentView()
                 .id(effectiveColorScheme)
                 .preferredColorScheme(effectiveColorScheme)

@@ -109,10 +109,8 @@ class LiveAnalytics: ObservableObject {
         }
 
         // A self-rescheduling loop (rather than a repeating Timer) guarantees each poll fully
-        // finishes — including both shell calls — before the next one starts. A plain repeating
-        // Timer would fire every 0.5s regardless of whether the prior poll's subprocesses had
-        // returned yet, letting polls overlap and race on lastDiskBytesByDevice/lastPollDate, which
-        // is what was producing bogus near-zero throughput readings.
+        // finishes before the next one starts, so polls can't overlap and race on
+        // lastDiskBytesByDevice/lastPollDate (which produced bogus near-zero readings).
         pollLoopTask = Task { [weak self] in
             while let self, !Task.isCancelled {
                 await self.pollMetrics()
@@ -124,13 +122,10 @@ class LiveAnalytics: ObservableObject {
     }
 
     private func pollMetrics() async {
-        let trackedDisks = await MainActor.run { HardwareManager.shared.gatherTrackedDiskBSDNames() }
-        // Run both shell calls concurrently instead of back-to-back, halving the wall-clock
-        // cost of each poll so it reliably completes within the 0.5s cadence.
+        let tracked = HardwareManager.shared.gatherTrackedBSDNames()
         let (diskResult, netResult) = await Task.detached(priority: .userInitiated) {
-            (Self.readDiskBytes(tracking: trackedDisks), Self.readNetworkCounters())
+            (Self.readDiskBytes(tracking: tracked.disks), Self.readNetworkCounters(tracking: tracked.interfaces))
         }.value
-        let displayGbps = await MainActor.run { fetchStaticDisplayGbps() } // Already calculated in HardwareManager
 
         await MainActor.run {
             let diskBytesByDevice = diskResult
@@ -162,6 +157,10 @@ class LiveAnalytics: ObservableObject {
                 }
                 liveGbpsByBSDName = newLiveByBSDName
 
+                // Displays have no byte counters, so their estimated video bandwidth stands in for
+                // live traffic. Only displays on Thunderbolt ports count; link speeds never do.
+                let ports = HardwareManager.shared.thunderboltPorts
+                let displayGbps = UIBackgroundWorkers.estimatedDisplayGbps(in: ports)
                 let newTotal = diskGbps + netGbps + displayGbps
 
                 totalTrafficGbps.append(newTotal)
@@ -169,7 +168,11 @@ class LiveAnalytics: ObservableObject {
                     totalTrafficGbps.removeFirst()
                 }
 
-                evaluateBottleneck(consumption: newTotal)
+                // Each port has its own controller and link, so bottlenecks are per port.
+                for port in ports {
+                    let consumption = (liveGbps(for: port) ?? 0) + UIBackgroundWorkers.estimatedDisplayGbps(in: [port])
+                    evaluateBottleneck(port: port, consumption: consumption)
+                }
             }
 
             lastDiskBytesByDevice = diskBytesByDevice
@@ -178,48 +181,54 @@ class LiveAnalytics: ObservableObject {
         }
     }
 
-    private var lastNotificationTime = Date.distantPast
+    // Per-port alert state, keyed by port name (node UUIDs are regenerated on every rescan).
+    private var lastNotificationTimeByPort: [String: Date] = [:]
     // The consumption value we last actually notified about, so we can tell a genuinely new
-    // reading from noise around the same steady-state bottleneck. nil means no active episode.
-    private var lastNotifiedConsumption: Double?
+    // reading from noise around the same steady-state bottleneck. No entry means no active episode.
+    private var lastNotifiedConsumptionByPort: [String: Double] = [:]
 
-    // User-configurable via Settings; 36 Gbps matches this system's negotiated Thunderbolt link cap.
-    private var bottleneckThreshold: Double {
+    // User-configurable via Settings, expressed for a 40 Gbps port and scaled to the port's
+    // actual capacity (so an 80 Gbps Thunderbolt 5 port alerts at 72 Gbps with the 36 Gbps default).
+    private var bottleneckThresholdPer40Gbps: Double {
         let stored = UserDefaults.standard.double(forKey: "bottleneckThresholdGbps")
         return stored > 0 ? stored : 36.0
     }
-    // Must drop meaningfully below the trigger threshold (not just tick under it once) before a
-    // later crossing counts as a fresh episode -- avoids flapping when consumption hovers near the line.
-    private var bottleneckClearThreshold: Double { bottleneckThreshold - 2.0 }
     private static let significantChangeGbps = 3.0
     private static let minNotificationInterval: TimeInterval = 120
 
-    private func evaluateBottleneck(consumption: Double) {
+    private func evaluateBottleneck(port: DeviceNode, consumption: Double) {
         // Alerts default to on; only an explicit false in Settings disables them.
         if UserDefaults.standard.object(forKey: "bottleneckAlertsEnabled") as? Bool == false { return }
-        if consumption < bottleneckClearThreshold {
-            lastNotifiedConsumption = nil
+        let key = port.name
+        let capacity = UIBackgroundWorkers.capacityGbps(of: port)
+        let threshold = bottleneckThresholdPer40Gbps * capacity / 40.0
+        // Must drop meaningfully below the trigger threshold (not just tick under it once) before a
+        // later crossing counts as a fresh episode -- avoids flapping when consumption hovers near the line.
+        if consumption < threshold - 2.0 {
+            lastNotifiedConsumptionByPort[key] = nil
             return
         }
-        guard consumption >= bottleneckThreshold else { return }
+        guard consumption >= threshold else { return }
 
-        let isNewEpisode = lastNotifiedConsumption == nil
-        let changedSignificantly = lastNotifiedConsumption.map { abs(consumption - $0) >= Self.significantChangeGbps } ?? true
-        guard isNewEpisode || changedSignificantly else { return }
-        guard Date().timeIntervalSince(lastNotificationTime) > Self.minNotificationInterval else { return }
+        let lastNotified = lastNotifiedConsumptionByPort[key]
+        let changedSignificantly = lastNotified.map { abs(consumption - $0) >= Self.significantChangeGbps } ?? true
+        guard changedSignificantly else { return }
+        let lastTime = lastNotificationTimeByPort[key] ?? .distantPast
+        guard Date().timeIntervalSince(lastTime) > Self.minNotificationInterval else { return }
 
-        lastNotificationTime = Date()
-        lastNotifiedConsumption = consumption
-        triggerBottleneckWarning(consumption: consumption)
+        lastNotificationTimeByPort[key] = Date()
+        lastNotifiedConsumptionByPort[key] = consumption
+        triggerBottleneckWarning(portName: key, consumption: consumption, capacity: capacity)
     }
 
-    private func triggerBottleneckWarning(consumption: Double) {
+    private func triggerBottleneckWarning(portName: String, consumption: Double, capacity: Double) {
         let content = UNMutableNotificationContent()
-        content.title = "Bandwidth Bottleneck Detected"
-        content.body = String(format: "Your Thunderbolt bus is currently pushing %.1f Gbps. Consider moving a high-bandwidth device to a separate physical port cluster on your Mac for optimal performance.", consumption)
+        content.title = "Bandwidth Bottleneck on \(portName)"
+        content.body = String(format: "This port is pushing %.1f of %.0f Gbps. Consider moving a high-bandwidth device to a different Thunderbolt port.", consumption, capacity)
         content.sound = .default
 
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        // One identifier per port, so a newer alert replaces the older one for the same port.
+        let request = UNNotificationRequest(identifier: "bottleneck-\(portName)", content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
     }
 
@@ -232,19 +241,12 @@ class LiveAnalytics: ObservableObject {
         return NativeLiveStats.diskCumulativeBytes().filter { wanted.contains($0.key) && $0.key != "disk0" }
     }
 
-    /// External physical adapters only (usually enX where X is not 0, which is Wi-Fi).
-    /// Ignores loopback, awdl, llw, bridge and utun.
-    nonisolated private static func readNetworkCounters() -> [String: NativeLiveStats.NetCounters] {
-        NativeLiveStats.networkCumulativeBytes().filter { name, _ in
-            !(name == "en0" || name.hasPrefix("lo") || name.hasPrefix("awdl") || name.hasPrefix("llw")
-              || name.hasPrefix("bridge") || name.hasPrefix("utun"))
-        }
-    }
-
-    @MainActor
-    private func fetchStaticDisplayGbps() -> Double {
-        // Find displays in the tree and sum their mathematically hardcoded link bandwidth
-        return HardwareManager.shared.gatherSystemTotal() 
+    /// Only interfaces belonging to devices in the tree (e.g. a Thunderbolt 10GbE adapter). The
+    /// Mac's built-in Ethernet and Wi-Fi -- whose names vary by model -- are never counted.
+    nonisolated private static func readNetworkCounters(tracking trackedInterfaces: [String]) -> [String: NativeLiveStats.NetCounters] {
+        let wanted = Set(trackedInterfaces)
+        guard !wanted.isEmpty else { return [:] }
+        return NativeLiveStats.networkCumulativeBytes().filter { wanted.contains($0.key) }
     }
     
     // Live measured throughput for a device (if it has a bsdName) or the sum across

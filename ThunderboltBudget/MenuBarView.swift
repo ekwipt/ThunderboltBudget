@@ -4,10 +4,12 @@ import Charts
 struct MenuBarView: View {
     @ObservedObject var manager = HardwareManager.shared
     @ObservedObject var analytics = LiveAnalytics.shared
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
     
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            let ports = manager.deviceTrees.first { $0.name == "Thunderbolt Bus" }?.children ?? []
+            let ports = manager.thunderboltPorts
             
             if ports.isEmpty {
                 Text(manager.isScanning ? "Scanning..." : "No Thunderbolt Ports Active")
@@ -65,9 +67,17 @@ struct MenuBarView: View {
             }
 
             HStack {
-                Text(String(format: "Total Consumption: %.1f Gbps", manager.gatherSystemTotal()))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                Button("Open Thunderbolt Budget") {
+                    // The popover doesn't activate the app, so bring it forward first or the
+                    // window opens behind whatever app is frontmost.
+                    NSApp.activate()
+                    openWindow(id: ThunderboltBudgetApp.mainWindowID)
+                }
+                Button("Settings…") {
+                    NSApp.activate()
+                    openSettings()
+                }
+                .keyboardShortcut(",")
                 Spacer()
                 Button("Quit") {
                     NSApplication.shared.terminate(nil)

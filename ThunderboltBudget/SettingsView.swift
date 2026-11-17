@@ -42,7 +42,7 @@ struct SettingsView: View {
                     }
                     Slider(value: $thresholdGbps, in: 10...40, step: 1)
                         .disabled(!alertsEnabled)
-                    Text("You'll get a notification when total measured throughput crosses this level.")
+                    Text("You'll get a notification when any single Thunderbolt port's live throughput crosses this level. Scaled up automatically for 80 Gbps Thunderbolt 5 ports.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }

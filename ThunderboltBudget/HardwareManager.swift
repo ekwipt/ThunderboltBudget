@@ -63,23 +63,31 @@ class HardwareManager: ObservableObject {
         }
     }
 
-    // iostat -I only reports its busiest few disks by default, which can silently exclude an
-    // idle-looking external drive (e.g. noisy Simulator disk images crowd it out). LiveAnalytics
-    // uses this to pass explicit disk names so the ones we actually track always show up.
-    func gatherTrackedDiskBSDNames() -> [String] {
-        var names: [String] = []
+    /// The physical Thunderbolt ports (children of the "Thunderbolt Bus" root), or [] if none.
+    var thunderboltPorts: [DeviceNode] {
+        deviceTrees.first { $0.name == "Thunderbolt Bus" }?.children ?? []
+    }
+
+    /// BSD names ("disk4", "en5") attached to devices in the tree. LiveAnalytics only counts
+    /// traffic for these, so the Mac's own boot disk, Wi-Fi and built-in Ethernet never inflate
+    /// the Thunderbolt totals.
+    func gatherTrackedBSDNames() -> (disks: [String], interfaces: [String]) {
+        var disks: [String] = []
+        var interfaces: [String] = []
         func walk(_ nodes: [DeviceNode]) {
             for node in nodes {
-                if let bsd = node.peripheralDetails?.bsdName, bsd.hasPrefix("disk") {
-                    names.append(bsd)
+                if let bsd = node.peripheralDetails?.bsdName {
+                    if bsd.hasPrefix("disk") { disks.append(bsd) } else { interfaces.append(bsd) }
                 }
                 if let children = node.children { walk(children) }
             }
         }
         walk(deviceTrees)
-        return names
+        return (disks, interfaces)
     }
 
+    /// Sum of each port's negotiated-link "budget" label. This is allocated link capacity, not
+    /// measured traffic -- never add it to live throughput.
     func gatherSystemTotal() -> Double {
         var total = 0.0
         if let bus = deviceTrees.first(where: { $0.name == "Thunderbolt Bus" }), let ports = bus.children {
@@ -124,6 +132,34 @@ struct UIBackgroundWorkers {
         return result
     }
     
+    /// Parses "12.3 Gbps" / "10 Gb/s" / "480 Mbps" into Gbps.
+    nonisolated static func gbps(fromLabel label: String) -> Double? {
+        let parts = label.split(separator: " ")
+        guard parts.count >= 2, let value = Double(parts[0]) else { return nil }
+        switch parts[1] {
+        case "Gbps", "Gb/s": return value
+        case "Mbps", "Mb/s": return value / 1000
+        default: return nil
+        }
+    }
+
+    /// Estimated video bandwidth of the displays in this subtree (from resolution x refresh).
+    /// Displays have no byte counters, so this estimate stands in for their live traffic.
+    nonisolated static func estimatedDisplayGbps(in nodes: [DeviceNode]) -> Double {
+        nodes.reduce(0) { total, node in
+            if node.displayDetails != nil {
+                return total + (node.bandwidthLabel.flatMap(gbps(fromLabel:)) ?? 0)
+            }
+            return total + estimatedDisplayGbps(in: node.children ?? [])
+        }
+    }
+
+    /// A port's link capacity from its "used / capacity Gbps" label; 40 Gbps if unknown.
+    nonisolated static func capacityGbps(of port: DeviceNode) -> Double {
+        guard let label = port.bandwidthLabel, let slash = label.firstIndex(of: "/") else { return 40 }
+        return gbps(fromLabel: label[label.index(after: slash)...].trimmingCharacters(in: .whitespaces)) ?? 40
+    }
+
     nonisolated static func gatherAllDeviceIDs(from nodes: [DeviceNode]) -> Set<UUID> {
         var ids = Set<UUID>()
         for node in nodes {
