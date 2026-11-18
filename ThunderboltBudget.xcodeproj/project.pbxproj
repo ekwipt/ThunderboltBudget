@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		8C6028622F6AA96200AAA378 /* ThunderboltBudget.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ThunderboltBudget.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8C6028622F6AA96200AAA378 /* ThunderboltBudget.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Thunderbolt Budget.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		8CF7A354309C97E7007CE4BC /* ThunderboltBudgetTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ThunderboltBudgetTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -353,7 +353,8 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = spacelightsound.ThunderboltBudget;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_MODULE_NAME = ThunderboltBudget;
+				PRODUCT_NAME = "Thunderbolt Budget";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -396,7 +397,8 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = spacelightsound.ThunderboltBudget;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_MODULE_NAME = ThunderboltBudget;
+				PRODUCT_NAME = "Thunderbolt Budget";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -423,7 +425,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ThunderboltBudget.app/Contents/MacOS/ThunderboltBudget";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Thunderbolt Budget.app/Contents/MacOS/Thunderbolt Budget";
 			};
 			name = Debug;
 		};
@@ -443,7 +445,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ThunderboltBudget.app/Contents/MacOS/ThunderboltBudget";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Thunderbolt Budget.app/Contents/MacOS/Thunderbolt Budget";
 			};
 			name = Release;
 		};
