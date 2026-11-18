@@ -178,22 +178,23 @@ nonisolated struct DeviceNode: Identifiable, Hashable {
     let bandwidthLabel: String?
     let uid: String?
     var children: [DeviceNode]?
-    var bandwidthRatio: Double?
     var dscActive: Bool
     var displayDetails: DisplayDetails?
     var rawBandwidth: Double?  // Uncompressed bandwidth for displays with DSC
     var peripheralDetails: PeripheralDetails?
     /// True for a stand-in row shown while this section's data is still being gathered.
     var isPlaceholder: Bool = false
+    /// Set only on physical Thunderbolt ports: the port's link capacity. Port usage is live
+    /// (LiveAnalytics.portUsageGbps), never the sum of attached devices' negotiated link speeds.
+    var capacityGbps: Double? = nil
 
-    init(id: UUID = UUID(), name: String, iconName: String = "cube", bandwidthLabel: String? = nil, uid: String? = nil, children: [DeviceNode]? = nil, bandwidthRatio: Double? = nil, dscActive: Bool = false, displayDetails: DisplayDetails? = nil, rawBandwidth: Double? = nil, peripheralDetails: PeripheralDetails? = nil, isPlaceholder: Bool = false) {
+    init(id: UUID = UUID(), name: String, iconName: String = "cube", bandwidthLabel: String? = nil, uid: String? = nil, children: [DeviceNode]? = nil, dscActive: Bool = false, displayDetails: DisplayDetails? = nil, rawBandwidth: Double? = nil, peripheralDetails: PeripheralDetails? = nil, isPlaceholder: Bool = false) {
         self.id = id
         self.name = name
         self.iconName = iconName
         self.bandwidthLabel = bandwidthLabel
         self.uid = uid
         self.children = children
-        self.bandwidthRatio = bandwidthRatio
         self.dscActive = dscActive
         self.displayDetails = displayDetails
         self.rawBandwidth = rawBandwidth

@@ -26,36 +26,9 @@ struct MenuBarView: View {
                             
                             Spacer(minLength: 20)
                             
-                            if let live = analytics.liveGbps(for: port) {
-                                Text(String(format: "%.2f Gbps live", live))
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundColor(.secondary)
-                            }
-
-                            if let bw = port.bandwidthLabel {
-                                Text(bw)
-                                    .font(.caption.bold())
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(pillColor(for: port))
-                                    .foregroundColor(.white)
-                                    .cornerRadius(6)
-                            }
+                            PortUsagePill(usage: analytics.portUsageGbps(port), capacity: capacity(port))
                         }
-                        if let ratio = port.bandwidthRatio {
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    Rectangle()
-                                        .fill(Color.secondary.opacity(0.2))
-                                    
-                                    Rectangle()
-                                        .fill(pillColor(for: port))
-                                        .frame(width: max(0, min(CGFloat(ratio), 1.0) * geo.size.width))
-                                }
-                            }
-                            .frame(height: 3)
-                            .cornerRadius(1.5)
-                        }
+                        PortUsageBar(usage: analytics.portUsageGbps(port), capacity: capacity(port), height: 3)
                     }
                     .padding(.vertical, 4)
                     Divider()
@@ -89,13 +62,8 @@ struct MenuBarView: View {
         .frame(width: 380)
     }
     
-    private func pillColor(for node: DeviceNode) -> Color {
-        guard let ratio = node.bandwidthRatio else {
-            return Color.blue.opacity(0.8)
-        }
-        if ratio >= 0.80 { return Color.red }
-        else if ratio >= 0.50 { return Color.orange }
-        else { return Color.green }
+    private func capacity(_ port: DeviceNode) -> Double {
+        UIBackgroundWorkers.capacityGbps(of: port)
     }
 }
 

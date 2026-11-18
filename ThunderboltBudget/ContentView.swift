@@ -56,16 +56,16 @@ struct ContentView: View {
     @ViewBuilder
     private var mainContent: some View {
         VStack(spacing: 0) {
-            // Allocated header: sum of negotiated link capacity across ports, not live traffic
-            // (live usage is the chart below).
+            // Live header: measured traffic plus display-reserved bandwidth across all ports.
             if !manager.deviceTrees.isEmpty {
-                let total = manager.gatherSystemTotal()
+                let total = analytics.totalTrafficGbps.last ?? 0
+                let ports = manager.thunderboltPorts.count
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Allocated")
+                        Text("Live Throughput")
                             .font(.headline)
                             .foregroundColor(.secondary)
-                            .help("Combined link bandwidth negotiated by connected devices. Live usage is shown in the chart below.")
+                            .help("Measured drive and network traffic, plus the video bandwidth displays reserve.")
                         if manager.isScanningThunderbolt {
                             HStack(spacing: 8) {
                                 ProgressView().controlSize(.small)
@@ -74,8 +74,16 @@ struct ContentView: View {
                                     .foregroundColor(.secondary)
                             }
                         } else {
-                            Text(String(format: "%.1f Gbps", total))
-                                .font(.system(size: 28, weight: .bold, design: .rounded))
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text(String(format: "%.1f Gbps", total))
+                                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                                    .monospacedDigit()
+                                if ports > 0 {
+                                    Text(String(format: "of %.0f Gbps across %d port%@", manager.totalPortCapacityGbps, ports, ports == 1 ? "" : "s"))
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
                         }
                     }
                     Spacer()
@@ -179,7 +187,7 @@ struct DeviceRow: View {
     }
 
     // Real, currently-measured throughput (native disk/network counters), as opposed to bandwidthLabel's
-    // static negotiated-link "budget" figure. nil when this node has no storage/network descendant.
+    // negotiated link speed. nil when this node has no storage/network descendant.
     var liveGbps: Double? {
         liveAnalytics.liveGbps(for: node)
     }
@@ -211,7 +219,8 @@ struct DeviceRow: View {
 
                 Spacer()
 
-                if let live = liveGbps {
+                // Ports show live usage in their own pill below, so skip the separate live badge.
+                if node.capacityGbps == nil, let live = liveGbps {
                     HStack(spacing: 3) {
                         Image(systemName: "bolt.fill")
                             .font(.system(size: 9))
@@ -224,31 +233,23 @@ struct DeviceRow: View {
                     .glassEffect(.regular.tint(.mint), in: .capsule)
                 }
 
-                if let bw = node.bandwidthLabel {
+                if let capacity = node.capacityGbps {
+                    PortUsagePill(usage: liveAnalytics.portUsageGbps(node), capacity: capacity)
+                } else if let bw = node.bandwidthLabel {
                     Text(bw)
                         .font(.caption.bold())
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(pillColor(for: node))
+                        .background(Color.blue.opacity(0.8))
                         .foregroundColor(.white)
                         .clipShape(Capsule())
+                        .help("Negotiated link speed")
                 }
             }
 
-            if let ratio = node.bandwidthRatio {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Rectangle()
-                            .fill(Color.secondary.opacity(0.2))
-
-                        Rectangle()
-                            .fill(pillColor(for: node))
-                            .frame(width: max(0, min(CGFloat(ratio), 1.0) * geo.size.width))
-                    }
-                }
-                .frame(height: 4)
-                .cornerRadius(2)
-                .padding(.leading, 24)
+            if let capacity = node.capacityGbps {
+                PortUsageBar(usage: liveAnalytics.portUsageGbps(node), capacity: capacity, height: 4)
+                    .padding(.leading, 24)
             }
         }
         .padding(.vertical, 4)
@@ -262,18 +263,54 @@ struct DeviceRow: View {
         }
     }
 
-    private func pillColor(for node: DeviceNode) -> Color {
-        guard let ratio = node.bandwidthRatio else {
-            return Color.blue.opacity(0.8)
-        }
-        if ratio >= 0.80 { return Color.red }
-        else if ratio >= 0.50 { return Color.orange }
-        else { return Color.green }
-    }
-
     static func liveLabel(_ gbps: Double) -> String {
         if gbps >= 1.0 { return String(format: "%.2f Gbps", gbps) }
         return String(format: "%.0f Mbps", gbps * 1000)
+    }
+}
+
+/// A physical port's live usage against its capacity.
+struct PortUsagePill: View {
+    let usage: Double
+    let capacity: Double
+
+    var body: some View {
+        Text(String(format: "%.1f / %.0f Gbps", usage, capacity))
+            .font(.caption.bold())
+            .monospacedDigit()
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(portUsageColor(usage: usage, capacity: capacity))
+            .foregroundColor(.white)
+            .clipShape(Capsule())
+            .help("Live usage: measured drive and network traffic plus display bandwidth, out of this port's capacity")
+    }
+}
+
+struct PortUsageBar: View {
+    let usage: Double
+    let capacity: Double
+    let height: CGFloat
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Rectangle().fill(Color.secondary.opacity(0.2))
+                Rectangle()
+                    .fill(portUsageColor(usage: usage, capacity: capacity))
+                    .frame(width: max(0, min(CGFloat(usage / capacity), 1.0) * geo.size.width))
+            }
+        }
+        .frame(height: height)
+        .cornerRadius(height / 2)
+    }
+}
+
+func portUsageColor(usage: Double, capacity: Double) -> Color {
+    switch UIBackgroundWorkers.usageColorLevel(ratio: capacity > 0 ? usage / capacity : 0) {
+    case 2: return .red
+    case 1: return .orange
+    default: return .green
     }
 }
 
@@ -282,7 +319,7 @@ struct LiveTrafficChart: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Live Data Throughput")
+            Text("Last 60 seconds")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .padding(.horizontal)

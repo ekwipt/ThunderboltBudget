@@ -86,21 +86,13 @@ nonisolated struct HardwareScanner {
             let sortedMapped = mapped.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             let injected = injectAccessories(into: sortedMapped, availableDisplays: &allDisplays, usbNodes: &usbNodes, mappings: displayMappings)
             
-            // Post-process the injected nodes to add root bandwidth ratios
+            // Record each physical port's capacity. Its usage is measured live, not derived from the
+            // devices' negotiated link speeds: devices behind a port share its link, and only
+            // displays actually reserve bandwidth.
             var customizedRootPorts: [DeviceNode] = []
             for port in injected {
-                var maxCap = 40.0
-                if let oldLabel = port.bandwidthLabel {
-                    let clean = oldLabel.replacingOccurrences(of: " Gb/s", with: "").replacingOccurrences(of: " Gbps", with: "")
-                    maxCap = Double(clean) ?? 40.0
-                }
-                
-                // Sum all endpoints under this physical port
-                let totalGbps = sumBandwidth(of: [port])
-                let ratio = min(totalGbps / maxCap, 1.0)
-                let newLabel = String(format: "%.1f / %.0f Gbps", totalGbps, maxCap)
-                
-                let newNode = DeviceNode(id: port.id, name: port.name, iconName: port.iconName, bandwidthLabel: newLabel, uid: port.uid, children: port.children, bandwidthRatio: ratio, peripheralDetails: port.peripheralDetails)
+                var newNode = DeviceNode(id: port.id, name: port.name, iconName: port.iconName, uid: port.uid, children: port.children, peripheralDetails: port.peripheralDetails)
+                newNode.capacityGbps = port.bandwidthLabel.flatMap(UIBackgroundWorkers.gbps(fromLabel:)) ?? 40
                 customizedRootPorts.append(newNode)
             }
             

@@ -187,8 +187,7 @@ class LiveAnalytics: ObservableObject {
 
                 // Each port has its own controller and link, so bottlenecks are per port.
                 for port in ports {
-                    let consumption = (liveGbps(for: port) ?? 0) + UIBackgroundWorkers.estimatedDisplayGbps(in: [port])
-                    evaluateBottleneck(port: port, consumption: consumption)
+                    evaluateBottleneck(port: port, consumption: portUsageGbps(port))
                 }
             }
 
@@ -270,6 +269,12 @@ class LiveAnalytics: ObservableObject {
         return NativeLiveStats.networkCumulativeBytes().filter { wanted.contains($0.key) }
     }
     
+    /// Live usage of a physical port: measured disk/network traffic plus the video bandwidth its
+    /// displays reserve. This is what the port pill, bar and bottleneck alerts all use.
+    func portUsageGbps(_ port: DeviceNode) -> Double {
+        (liveGbps(for: port) ?? 0) + UIBackgroundWorkers.estimatedDisplayGbps(in: [port])
+    }
+
     // Live measured throughput for a device (if it has a bsdName) or the sum across
     // its subtree (if it's a hub/port). Returns nil when no descendant has live data at all,
     // so nodes unrelated to storage/network (displays, HID devices, generic hubs) show nothing.

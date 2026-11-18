@@ -86,27 +86,11 @@ class HardwareManager: ObservableObject {
         return (disks, interfaces)
     }
 
-    /// Sum of each port's negotiated-link "budget" label. This is allocated link capacity, not
-    /// measured traffic -- never add it to live throughput.
-    func gatherSystemTotal() -> Double {
-        var total = 0.0
-        if let bus = deviceTrees.first(where: { $0.name == "Thunderbolt Bus" }), let ports = bus.children {
-            for port in ports {
-                if let label = port.bandwidthLabel {
-                    let parts = label.components(separatedBy: "/")
-                    if let valStr = parts.first?.trimmingCharacters(in: .whitespaces) {
-                        // Extract numeric value from "10.0 Gbps" or "10.0"
-                        let numericOnly = valStr.replacingOccurrences(of: " Gbps", with: "").replacingOccurrences(of: " Gb/s", with: "")
-                        if let val = Double(numericOnly) {
-                            total += val
-                        }
-                    }
-                }
-            }
-        }
-        return total
+    /// Combined capacity of all Thunderbolt ports.
+    var totalPortCapacityGbps: Double {
+        thunderboltPorts.reduce(0) { $0 + UIBackgroundWorkers.capacityGbps(of: $1) }
     }
-    
+
     func copyMarkdownAction() {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
@@ -123,7 +107,8 @@ struct UIBackgroundWorkers {
         var result = ""
         let indent = String(repeating: "  ", count: depth)
         for node in nodes {
-            let bwSuffix = node.bandwidthLabel != nil ? " [\(node.bandwidthLabel!)]" : ""
+            let bwSuffix = node.bandwidthLabel.map { " [\($0)]" }
+                ?? node.capacityGbps.map { String(format: " [%.0f Gbps port]", $0) } ?? ""
             result += "\(indent)- \(node.name)\(bwSuffix)\n"
             if let children = node.children {
                 result += generateHardwareMarkdown(from: children, depth: depth + 1)
@@ -154,10 +139,14 @@ struct UIBackgroundWorkers {
         }
     }
 
-    /// A port's link capacity from its "used / capacity Gbps" label; 40 Gbps if unknown.
+    /// A port's link capacity; 40 Gbps if unknown.
     nonisolated static func capacityGbps(of port: DeviceNode) -> Double {
-        guard let label = port.bandwidthLabel, let slash = label.firstIndex(of: "/") else { return 40 }
-        return gbps(fromLabel: label[label.index(after: slash)...].trimmingCharacters(in: .whitespaces)) ?? 40
+        port.capacityGbps ?? 40
+    }
+
+    /// Green under 50%, orange under 80%, red above.
+    nonisolated static func usageColorLevel(ratio: Double) -> Int {
+        ratio >= 0.80 ? 2 : (ratio >= 0.50 ? 1 : 0)
     }
 
     nonisolated static func gatherAllDeviceIDs(from nodes: [DeviceNode]) -> Set<UUID> {
