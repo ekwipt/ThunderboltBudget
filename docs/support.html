@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thunderbolt Budget Support</title>
+<meta name="description" content="Help and answers for Thunderbolt Budget, a macOS utility that shows live Thunderbolt and USB4 bandwidth per port.">
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f5f5f7;
+    --text: #1d1d1f;
+    --muted: #6e6e73;
+    --rule: #d2d2d7;
+    --accent: #0a66d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161617;
+      --surface: #232325;
+      --text: #f5f5f7;
+      --muted: #a1a1a6;
+      --rule: #3a3a3c;
+      --accent: #4ea1ff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 56px 16px 72px; }
+  .app { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 15px; font-weight: 600; letter-spacing: .01em; }
+  .app svg { width: 22px; height: 22px; color: var(--accent); }
+  h1 { font-size: 40px; line-height: 1.1; letter-spacing: -.02em; margin: 12px 0 12px; }
+  .lede { font-size: 19px; color: var(--muted); margin: 0 0 28px; max-width: 60ch; }
+  .contact {
+    background: var(--surface);
+    border-radius: 14px;
+    padding: 20px 22px;
+    margin: 0 0 40px;
+  }
+  .contact p { margin: 0; }
+  .contact .label { font-weight: 600; margin-bottom: 4px; }
+  .button {
+    display: inline-block; margin-top: 12px;
+    background: var(--accent); color: #fff; text-decoration: none;
+    font-weight: 600; font-size: 15px;
+    padding: 8px 16px; border-radius: 999px;
+  }
+  h2 { font-size: 22px; letter-spacing: -.01em; margin: 40px 0 8px; padding-top: 24px; border-top: 1px solid var(--rule); }
+  details { border-bottom: 1px solid var(--rule); padding: 14px 0; }
+  details:first-of-type { border-top: 1px solid var(--rule); }
+  summary { cursor: pointer; font-weight: 600; list-style: none; position: relative; padding-right: 28px; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; position: absolute; right: 4px; top: -2px; font-size: 22px; font-weight: 400; color: var(--muted); }
+  details[open] summary::after { content: "–"; }
+  details p { margin: 10px 0 2px; color: var(--text); }
+  p, li { max-width: 68ch; }
+  ul { padding-left: 22px; }
+  li { margin: 6px 0; }
+  a { color: var(--accent); }
+  footer { margin-top: 56px; color: var(--muted); font-size: 14px; }
+  @media (max-width: 480px) { h1 { font-size: 32px; } main { padding-top: 36px; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="app">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/></svg>
+    Thunderbolt Budget
+  </div>
+  <h1>Support</h1>
+  <p class="lede">Thunderbolt Budget shows which devices are plugged into each Thunderbolt port on your Mac, and how much of each port's bandwidth they're using right now.</p>
+
+  <div class="contact">
+    <p class="label">Need help or found a bug?</p>
+    <p>Email <a href="mailto:ben.mccarthy@me.com">ben.mccarthy@me.com</a>. It helps to include your Mac model, your macOS version, and what's plugged into each port. In the app, <strong>Copy Markdown</strong> copies your device list so you can paste it into the email.</p>
+    <a class="button" href="mailto:ben.mccarthy@me.com?subject=Thunderbolt%20Budget%20support">Email support</a>
+  </div>
+
+  <h2>Requirements</h2>
+  <ul>
+    <li>A Mac with Apple silicon (M1 or later). Intel Macs are not supported.</li>
+    <li>macOS 26 or later.</li>
+  </ul>
+
+  <h2>Common questions</h2>
+
+  <details>
+    <summary>Why does a port show 0 Gbps when a fast drive is plugged in?</summary>
+    <p>The port's pill and bar show <strong>live usage</strong>: data actually moving right now. An idle drive uses no bandwidth, even if it connected at 40 Gb/s. Start a copy and the number will go up.</p>
+  </details>
+
+  <details>
+    <summary>What's the difference between a device's speed and the port's usage?</summary>
+    <p>Each device shows the <strong>link speed</strong> it connected at in a blue pill, for example "40 Gb/s". That's the most it could use. Devices on the same port share that port's connection to your Mac, so link speeds don't add up. The port's coloured pill shows what's actually in use, out of the port's capacity.</p>
+  </details>
+
+  <details>
+    <summary>Why does a port with a display show usage even when nothing is copying?</summary>
+    <p>Displays reserve bandwidth all the time to send the picture. Thunderbolt Budget estimates this from the display's native resolution and refresh rate and includes it in the port's usage. A 4K display at 60 Hz uses roughly 14 Gbps.</p>
+  </details>
+
+  <details>
+    <summary>My display's resolution looks different from what I set in System Settings.</summary>
+    <p>If your display is scaled (for example a 4K display set to "looks like 2560 × 1440"), the app shows the "Looks Like" size you chose and the panel's <strong>Native Pixels</strong> separately. Bandwidth is based on the native pixels, because that's what the cable carries.</p>
+  </details>
+
+  <details>
+    <summary>Which traffic is counted?</summary>
+    <p>Reads and writes on external drives, and traffic through external network adapters (such as a Thunderbolt 10GbE adapter), plus the estimated display bandwidth. Your Mac's internal drive, built-in Ethernet and Wi-Fi are not counted, because they don't use the Thunderbolt ports. Devices such as audio interfaces don't report a byte count to macOS, so they appear in the list without a live figure.</p>
+  </details>
+
+  <details>
+    <summary>How do bottleneck alerts work?</summary>
+    <p>You'll get a notification when a single port's live usage crosses the threshold in <strong>Settings</strong> (36 Gbps by default for a 40 Gbps port; it scales up automatically for 80 Gbps Thunderbolt 5 ports). You'll get one alert per busy period, not a stream of them. You can change the threshold or turn alerts off in Settings.</p>
+  </details>
+
+  <details>
+    <summary>I'm not getting alerts.</summary>
+    <p>Check that <strong>Bottleneck alerts</strong> is on in the app's Settings, and that notifications for Thunderbolt Budget are allowed in <strong>System Settings ▸ Notifications</strong>. If they've been turned off there, the app's Settings window shows a note with a button to open the right page.</p>
+  </details>
+
+  <details>
+    <summary>Why is my port called "Thunderbolt Port 1" instead of "Left Back Port"?</summary>
+    <p>Physical port names are only known for some Mac models. On others, ports are numbered instead. The devices and figures are the same either way.</p>
+  </details>
+
+  <details>
+    <summary>How do I get the main window back after closing it?</summary>
+    <p>Click the bolt icon in the menu bar and choose <strong>Open Thunderbolt Budget</strong>. You can also open <strong>Settings</strong> from there.</p>
+  </details>
+
+  <details>
+    <summary>Does the app collect any data?</summary>
+    <p>No. Everything stays on your Mac, and the app has no network access. See the <a href="privacy.html">Privacy Policy</a>.</p>
+  </details>
+
+  <footer>Thunderbolt Budget is developed by ekwipt. <a href="privacy.html">Privacy Policy</a></footer>
+</main>
+</body>
+</html>

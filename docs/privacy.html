@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thunderbolt Budget Privacy Policy</title>
+<meta name="description" content="Privacy policy for Thunderbolt Budget, a macOS utility for monitoring Thunderbolt and USB4 bandwidth. The app collects no data.">
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f5f5f7;
+    --text: #1d1d1f;
+    --muted: #6e6e73;
+    --rule: #d2d2d7;
+    --accent: #0a66d6;
+    --ok: #1a7f37;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161617;
+      --surface: #232325;
+      --text: #f5f5f7;
+      --muted: #a1a1a6;
+      --rule: #3a3a3c;
+      --accent: #4ea1ff;
+      --ok: #4cc26a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 56px 16px 72px; }
+  .app { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 15px; font-weight: 600; letter-spacing: .01em; }
+  .app svg { width: 22px; height: 22px; color: var(--accent); }
+  h1 { font-size: 40px; line-height: 1.1; letter-spacing: -.02em; margin: 12px 0 8px; }
+  .updated { color: var(--muted); font-size: 15px; margin: 0 0 32px; }
+  .summary {
+    background: var(--surface);
+    border-radius: 14px;
+    padding: 20px 22px;
+    margin: 0 0 40px;
+  }
+  .summary p { margin: 0 0 12px; font-weight: 600; }
+  .summary ul { margin: 0; padding: 0; list-style: none; }
+  .summary li { padding-left: 28px; position: relative; margin: 6px 0; }
+  .summary li::before {
+    content: "";
+    position: absolute; left: 4px; top: .55em;
+    width: 12px; height: 7px;
+    border-left: 2.5px solid var(--ok); border-bottom: 2.5px solid var(--ok);
+    transform: rotate(-45deg);
+  }
+  h2 { font-size: 22px; letter-spacing: -.01em; margin: 40px 0 8px; padding-top: 24px; border-top: 1px solid var(--rule); }
+  p, li { max-width: 68ch; }
+  ul { padding-left: 22px; }
+  li { margin: 6px 0; }
+  a { color: var(--accent); }
+  code { font: 15px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface); padding: 1px 6px; border-radius: 6px; }
+  footer { margin-top: 56px; color: var(--muted); font-size: 14px; }
+  @media (max-width: 480px) { h1 { font-size: 32px; } main { padding-top: 36px; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="app">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/></svg>
+    Thunderbolt Budget
+  </div>
+  <h1>Privacy Policy</h1>
+  <p class="updated">Effective 18 November 2026</p>
+
+  <div class="summary">
+    <p>The short version</p>
+    <ul>
+      <li>Thunderbolt Budget does not collect, store or share any personal data.</li>
+      <li>Everything the app shows is read from your Mac and stays on your Mac.</li>
+      <li>The app has no network access, so it can't send data anywhere.</li>
+      <li>There are no accounts, ads, analytics or tracking.</li>
+    </ul>
+  </div>
+
+  <h2>What the app reads</h2>
+  <p>To show which devices are connected to which port and how much bandwidth they use, Thunderbolt Budget reads the following from macOS while it is running:</p>
+  <ul>
+    <li><strong>Connected hardware:</strong> names, manufacturers, model and vendor identifiers, serial numbers and connection speeds of Thunderbolt, USB4 and USB devices and connected displays.</li>
+    <li><strong>Display details:</strong> resolution, refresh rate and the information displays report about themselves (such as manufacturer and manufacture date).</li>
+    <li><strong>Traffic counters:</strong> the total number of bytes read from and written to external drives, and sent and received by external network adapters. The app only reads these totals to calculate speed. It never sees the contents of your files or network traffic.</li>
+  </ul>
+  <p>This information is held in memory only while the app is open. It is not saved to disk, not sent to the developer and not shared with anyone.</p>
+
+  <h2>What the app stores</h2>
+  <p>The app saves only your settings on your Mac: the bottleneck alert threshold, whether alerts are on, the refresh rate and your appearance choice. These stay in the app's own sandboxed storage on your Mac and are never sent anywhere.</p>
+
+  <h2>Notifications</h2>
+  <p>If you allow notifications, the app shows bottleneck alerts on your Mac. They are created on your Mac and are not sent through any server. You can turn them off in the app's Settings or in System Settings ▸ Notifications.</p>
+
+  <h2>Copying to the clipboard</h2>
+  <p>If you choose to copy your device list, it is placed on your Mac's clipboard. What happens to it after that is up to you.</p>
+
+  <h2>Network access</h2>
+  <p>Thunderbolt Budget runs in Apple's App Sandbox without permission to make or accept network connections. It contains no third-party code, analytics or advertising frameworks.</p>
+
+  <h2>Crash reports from Apple</h2>
+  <p>If you have chosen to share analytics with app developers in macOS (System Settings ▸ Privacy &amp; Security ▸ Analytics &amp; Improvements), Apple may send the developer anonymous crash and performance reports. Apple controls this, and you can turn it off at any time in that setting. See <a href="https://www.apple.com/legal/privacy/">Apple's Privacy Policy</a>.</p>
+
+  <h2>Children</h2>
+  <p>The app does not collect information from anyone, including children.</p>
+
+  <h2>Changes to this policy</h2>
+  <p>If this policy changes, the updated version will be posted on this page with a new effective date.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about this policy: <a href="mailto:ben.mccarthy@me.com">ben.mccarthy@me.com</a></p>
+
+  <footer>Thunderbolt Budget is developed by ekwipt.</footer>
+</main>
+</body>
+</html>
